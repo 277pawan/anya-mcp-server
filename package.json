@@ -1,0 +1,24 @@
+{
+  "name": "anya-mcp-server",
+  "version": "1.0.0",
+  "description": "anyaXmcp",
+  "license": "ISC",
+  "author": "Pawan Bisht",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "nodemon index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
+    "dotenv": "^17.4.1",
+    "googleapis": "^171.4.0",
+    "nodemon": "^3.1.14",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0"
+  }
+}
