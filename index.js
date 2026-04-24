@@ -14,9 +14,17 @@ const server = new McpServer({
   version: "1.0.0",
 });
 
-//  Pure JS — zero date-fns, zero format strings, zero 'n' token risk
+async function fetchAPI(url) {
+  const res = await fetch(url);
+  const data = await res.json();
+  if (data.error) {
+    throw new Error(`API Error: ${data.error.message}`);
+  }
+  return data;
+}
+
+// Build midnight IST for the given date using Temporal-style trick
 function getDayBoundsInIST(dateStr) {
-  // Build midnight IST for the given date using Temporal-style trick
   const [year, month, day] = new Date(dateStr)
     .toLocaleDateString("en-CA", { timeZone }) // gives "YYYY-MM-DD" in IST
     .split("-")
@@ -147,6 +155,612 @@ server.tool(
             null,
             2,
           ),
+        },
+      ],
+    };
+  },
+);
+
+server.tool(
+  "reverseGeocode",
+  {
+    lat: z.number().describe("Latitude"),
+    lng: z.number().describe("Longitude"),
+  },
+  async ({ lat, lng }) => {
+    const data = await fetchMaps("geocode", { latlng: `${lat},${lng}` });
+    const result = data.results[0];
+
+    if (!result) {
+      return {
+        content: [
+          { type: "text", text: "No address found for these coordinates." },
+        ],
+      };
+    }
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              formatted_address: result.formatted_address,
+              place_id: result.place_id,
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+    };
+  },
+);
+
+// ─── TOOL 3: Search Nearby Places ─────────────────────────
+server.tool(
+  "searchNearbyPlaces",
+  {
+    location: z.string().describe("Address or place name to search around"),
+    radius: z.number().default(1000).describe("Search radius in meters"),
+    type: z
+      .string()
+      .optional()
+      .describe("Place type e.g. restaurant, hospital, school"),
+    keyword: z.string().optional().describe("Keyword to filter results"),
+  },
+  async ({ location, radius, type, keyword }) => {
+    // First geocode the location
+    const geo = await fetchMaps("geocode", { address: location });
+    const { lat, lng } = geo.results[0].geometry.location;
+
+    const params = {
+      location: `${lat},${lng}`,
+      radius: radius.toString(),
+    };
+    if (type) params.type = type;
+    if (keyword) params.keyword = keyword;
+
+    const data = await fetchMaps("place/nearbysearch", params);
+
+    const places = data.results.slice(0, 10).map((place) => ({
+      name: place.name,
+      address: place.vicinity,
+      rating: place.rating,
+      total_ratings: place.user_ratings_total,
+      open_now: place.opening_hours?.open_now,
+      place_id: place.place_id,
+    }));
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(places, null, 2),
+        },
+      ],
+    };
+  },
+);
+
+// ─── TOOL 4: Get Place Details ─────────────────────────────
+server.tool(
+  "getPlaceDetails",
+  {
+    place_id: z.string().describe("Google Place ID"),
+  },
+  async ({ place_id }) => {
+    const data = await fetchMaps("place/details", {
+      place_id,
+      fields:
+        "name,formatted_address,formatted_phone_number,website,rating,opening_hours,reviews",
+    });
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(data.result, null, 2),
+        },
+      ],
+    };
+  },
+);
+
+// ─── TOOL 5: Get Directions ────────────────────────────────
+server.tool(
+  "getDirections",
+  {
+    origin: z.string().describe("Starting location"),
+    destination: z.string().describe("Destination location"),
+    mode: z
+      .enum(["driving", "walking", "bicycling", "transit"])
+      .default("driving")
+      .describe("Travel mode"),
+  },
+  async ({ origin, destination, mode }) => {
+    const data = await fetchMaps("directions", { origin, destination, mode });
+
+    if (!data.routes.length) {
+      return {
+        content: [{ type: "text", text: "No routes found." }],
+      };
+    }
+
+    const route = data.routes[0].legs[0];
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              from: route.start_address,
+              to: route.end_address,
+              distance: route.distance.text,
+              duration: route.duration.text,
+              steps: route.steps.map((step) =>
+                step.html_instructions.replace(/<[^>]+>/g, ""),
+              ),
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+    };
+  },
+);
+
+// ─── TOOL 6: Get Distance Matrix ───────────────────────────
+server.tool(
+  "getDistance",
+  {
+    origins: z.string().describe("Starting location"),
+    destinations: z.string().describe("Destination location"),
+    mode: z
+      .enum(["driving", "walking", "bicycling", "transit"])
+      .default("driving"),
+  },
+  async ({ origins, destinations, mode }) => {
+    const data = await fetchMaps("distancematrix", {
+      origins,
+      destinations,
+      mode,
+    });
+
+    const result = data.rows[0].elements[0];
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              from: data.origin_addresses[0],
+              to: data.destination_addresses[0],
+              distance: result.distance.text,
+              duration: result.duration.text,
+              status: result.status,
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+    };
+  },
+);
+
+// ─── TOOL 7: Search Places by Text ────────────────────────
+server.tool(
+  "searchPlaces",
+  {
+    query: z.string().describe("Text search query e.g. 'pizza near Delhi'"),
+  },
+  async ({ query }) => {
+    const data = await fetchMaps("place/textsearch", { query });
+
+    const places = data.results.slice(0, 10).map((place) => ({
+      name: place.name,
+      address: place.formatted_address,
+      rating: place.rating,
+      total_ratings: place.user_ratings_total,
+      place_id: place.place_id,
+    }));
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(places, null, 2),
+        },
+      ],
+    };
+  },
+);
+
+// Search API'server
+server.tool(
+  "translateText",
+  {
+    text: z.string().describe("Text to translate"),
+    target: z.string().describe("Target language code e.g. hi, fr, es, de, ja"),
+    source: z
+      .string()
+      .optional()
+      .describe("Source language code (auto detect if not provided)"),
+  },
+  async ({ text, target, source }) => {
+    let url = `https://translation.googleapis.com/language/translate/v2?key=${process.env.GOOGLE_PUBLIC_API_KEY}`;
+    url += `&q=${encodeURIComponent(text)}`;
+    url += `&target=${target}`;
+    if (source) url += `&source=${source}`;
+
+    const data = await fetchAPI(url);
+    const result = data.data.translations[0];
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              translated_text: result.translatedText,
+              detected_source_language: result.detectedSourceLanguage || source,
+              target_language: target,
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+    };
+  },
+);
+
+// ─── TOOL 2: Detect Language ───────────────────────────────
+server.tool(
+  "detectLanguage",
+  {
+    text: z.string().describe("Text to detect language of"),
+  },
+  async ({ text }) => {
+    const url = `https://translation.googleapis.com/language/translate/v2/detect?key=${process.env.GOOGLE_PUBLIC_API_KEY}&q=${encodeURIComponent(text)}`;
+
+    const data = await fetchAPI(url);
+    const result = data.data.detections[0][0];
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              language: result.language,
+              confidence: result.confidence,
+              is_reliable: result.isReliable,
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+    };
+  },
+);
+
+// ─── TOOL 3: List Supported Languages ─────────────────────
+server.tool(
+  "getSupportedLanguages",
+  {
+    target: z
+      .string()
+      .optional()
+      .default("en")
+      .describe("Language to display language names in"),
+  },
+  async ({ target }) => {
+    const url = `https://translation.googleapis.com/language/translate/v2/languages?key=${process.env.GOOGLE_PUBLIC_API_KEY}&target=${target}`;
+
+    const data = await fetchAPI(url);
+    const languages = data.data.languages.map((l) => ({
+      code: l.language,
+      name: l.name,
+    }));
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(languages, null, 2),
+        },
+      ],
+    };
+  },
+);
+
+// ══════════════════════════════════════════════════════════
+//  GOOGLE BOOKS
+// ══════════════════════════════════════════════════════════
+
+// ─── TOOL 4: Search Books ──────────────────────────────────
+server.tool(
+  "searchBooks",
+  {
+    query: z
+      .string()
+      .describe("Search query e.g. 'system design' or 'author:robert martin'"),
+    maxResults: z
+      .number()
+      .optional()
+      .default(10)
+      .describe("Max results to return (max 40)"),
+    language: z
+      .string()
+      .optional()
+      .describe("Filter by language code e.g. en, hi, fr"),
+  },
+  async ({ query, maxResults, language }) => {
+    let url = `https://www.googleapis.com/books/v1/volumes?key=${process.env.GOOGLE_PUBLIC_API_KEY}`;
+    url += `&q=${encodeURIComponent(query)}`;
+    url += `&maxResults=${maxResults}`;
+    if (language) url += `&langRestrict=${language}`;
+
+    const data = await fetchAPI(url);
+
+    if (!data.items || data.items.length === 0) {
+      return {
+        content: [{ type: "text", text: "No books found." }],
+      };
+    }
+
+    const books = data.items.map((item) => {
+      const info = item.volumeInfo;
+      return {
+        title: info.title,
+        authors: info.authors || [],
+        publisher: info.publisher,
+        published_date: info.publishedDate,
+        description:
+          info.description?.slice(0, 200) + "..." || "No description",
+        page_count: info.pageCount,
+        categories: info.categories || [],
+        language: info.language,
+        rating: info.averageRating,
+        ratings_count: info.ratingsCount,
+        preview_link: info.previewLink,
+        isbn: info.industryIdentifiers?.[0]?.identifier,
+      };
+    });
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(books, null, 2),
+        },
+      ],
+    };
+  },
+);
+
+// ─── TOOL 5: Get Book Details ──────────────────────────────
+server.tool(
+  "getBookDetails",
+  {
+    volume_id: z.string().describe("Google Books volume ID"),
+  },
+  async ({ volume_id }) => {
+    const url = `https://www.googleapis.com/books/v1/volumes/${volume_id}?key=${process.env.GOOGLE_PUBLIC_API_KEY}`;
+
+    const data = await fetchAPI(url);
+    const info = data.volumeInfo;
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              title: info.title,
+              subtitle: info.subtitle,
+              authors: info.authors,
+              publisher: info.publisher,
+              published_date: info.publishedDate,
+              description: info.description,
+              page_count: info.pageCount,
+              categories: info.categories,
+              language: info.language,
+              rating: info.averageRating,
+              ratings_count: info.ratingsCount,
+              preview_link: info.previewLink,
+              info_link: info.infoLink,
+              isbn_10: info.industryIdentifiers?.find(
+                (i) => i.type === "ISBN_10",
+              )?.identifier,
+              isbn_13: info.industryIdentifiers?.find(
+                (i) => i.type === "ISBN_13",
+              )?.identifier,
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+    };
+  },
+);
+
+// ─── TOOL 6: Search Books by Author ───────────────────────
+server.tool(
+  "searchBooksByAuthor",
+  {
+    author: z.string().describe("Author name to search"),
+    maxResults: z.number().optional().default(10),
+  },
+  async ({ author, maxResults }) => {
+    const url = `https://www.googleapis.com/books/v1/volumes?key=${process.env.GOOGLE_PUBLIC_API_KEY}&q=inauthor:${encodeURIComponent(author)}&maxResults=${maxResults}`;
+
+    const data = await fetchAPI(url);
+
+    if (!data.items) {
+      return {
+        content: [{ type: "text", text: "No books found for this author." }],
+      };
+    }
+
+    const books = data.items.map((item) => {
+      const info = item.volumeInfo;
+      return {
+        title: info.title,
+        published_date: info.publishedDate,
+        rating: info.averageRating,
+        preview_link: info.previewLink,
+        volume_id: item.id,
+      };
+    });
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(books, null, 2),
+        },
+      ],
+    };
+  },
+);
+
+// ══════════════════════════════════════════════════════════
+//  GOOGLE CUSTOM SEARCH
+// ══════════════════════════════════════════════════════════
+
+// ─── TOOL 7: Web Search ────────────────────────────────────
+server.tool(
+  "webSearch",
+  {
+    query: z.string().describe("Search query"),
+    numResults: z
+      .number()
+      .optional()
+      .default(10)
+      .describe("Number of results (max 10)"),
+    language: z.string().optional().describe("Language code e.g. en, hi"),
+    dateRestrict: z
+      .string()
+      .optional()
+      .describe(
+        "Restrict by date e.g. d1=past day, w1=past week, m1=past month",
+      ),
+  },
+  async ({ query, numResults, language, dateRestrict }) => {
+    let url = `https://www.googleapis.com/customsearch/v1?key=${process.env.GOOGLE_PUBLIC_API_KEY}&cx=${process.env.SEARCH_ENGINE_ID}`;
+    url += `&q=${encodeURIComponent(query)}`;
+    url += `&num=${numResults}`;
+    if (language) url += `&lr=lang_${language}`;
+    if (dateRestrict) url += `&dateRestrict=${dateRestrict}`;
+
+    const data = await fetchAPI(url);
+
+    if (!data.items || data.items.length === 0) {
+      return {
+        content: [{ type: "text", text: "No results found." }],
+      };
+    }
+
+    const results = data.items.map((item) => ({
+      title: item.title,
+      link: item.link,
+      snippet: item.snippet,
+      domain: item.displayLink,
+    }));
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(results, null, 2),
+        },
+      ],
+    };
+  },
+);
+
+// ─── TOOL 8: Image Search ──────────────────────────────────
+server.tool(
+  "imageSearch",
+  {
+    query: z.string().describe("Image search query"),
+    numResults: z.number().optional().default(10),
+  },
+  async ({ query, numResults }) => {
+    let url = `https://www.googleapis.com/customsearch/v1?key=${process.env.GOOGLE_PUBLIC_API_KEY}&cx=${process.env.SEARCH_ENGINE_ID}`;
+    url += `&q=${encodeURIComponent(query)}`;
+    url += `&searchType=image`;
+    url += `&num=${numResults}`;
+
+    const data = await fetchAPI(url);
+
+    if (!data.items) {
+      return {
+        content: [{ type: "text", text: "No images found." }],
+      };
+    }
+
+    const images = data.items.map((item) => ({
+      title: item.title,
+      link: item.link,
+      thumbnail: item.image?.thumbnailLink,
+      context_link: item.image?.contextLink,
+      width: item.image?.width,
+      height: item.image?.height,
+    }));
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(images, null, 2),
+        },
+      ],
+    };
+  },
+);
+
+// ─── TOOL 9: Site Search ───────────────────────────────────
+server.tool(
+  "siteSearch",
+  {
+    query: z.string().describe("Search query"),
+    site: z.string().describe("Site to search within e.g. reddit.com"),
+    numResults: z.number().optional().default(10),
+  },
+  async ({ query, site, numResults }) => {
+    const fullQuery = `site:${site} ${query}`;
+    let url = `https://www.googleapis.com/customsearch/v1?key=${process.env.GOOGLE_PUBLIC_API_KEY}&cx=${process.env.SEARCH_ENGINE_ID}`;
+    url += `&q=${encodeURIComponent(fullQuery)}`;
+    url += `&num=${numResults}`;
+
+    const data = await fetchAPI(url);
+
+    if (!data.items) {
+      return {
+        content: [{ type: "text", text: "No results found." }],
+      };
+    }
+
+    const results = data.items.map((item) => ({
+      title: item.title,
+      link: item.link,
+      snippet: item.snippet,
+    }));
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(results, null, 2),
         },
       ],
     };
