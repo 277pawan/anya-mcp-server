@@ -17,20 +17,23 @@ const server = new McpServer({
 async function fetchAPI(url) {
   const res = await fetch(url);
   const data = await res.json();
+  // BUG FIX #5: data.error.message can be undefined — use safe access + fallback
   if (data.error) {
-    throw new Error(`API Error: ${data.error.message}`);
+    throw new Error(
+      `API Error: ${data.error?.message || data.error?.status || JSON.stringify(data.error)}`,
+    );
   }
   return data;
 }
 
-// Build midnight IST for the given date using Temporal-style trick
 function getDayBoundsInIST(dateStr) {
   const [year, month, day] = new Date(dateStr)
-    .toLocaleDateString("en-CA", { timeZone }) // gives "YYYY-MM-DD" in IST
+    .toLocaleDateString("en-CA", { timeZone })
     .split("-")
     .map(Number);
 
-  // Midnight IST = UTC-5:30 offset, so add 330 minutes worth of ms back
+  // BUG FIX #3: IST is UTC+5:30, so midnight IST = UTC minus 5.5 hours
+  // To get UTC time of midnight IST: subtract 5.5h from midnight UTC
   const ISTOffsetMs = 5.5 * 60 * 60 * 1000;
 
   const startUTC = new Date(Date.UTC(year, month - 1, day) - ISTOffsetMs);
@@ -42,7 +45,6 @@ function getDayBoundsInIST(dateStr) {
   };
 }
 
-//  Safe display formatter — no date-fns, no format tokens
 function formatISTDisplay(dateTimeStr) {
   return new Date(dateTimeStr).toLocaleString("en-IN", {
     timeZone,
@@ -56,6 +58,7 @@ function formatISTDisplay(dateTimeStr) {
 }
 
 async function getMyCalendarDataByDate(date) {
+  // Using API key auth — works for public calendars
   const calendar = google.calendar({
     version: "v3",
     auth: process.env.GOOGLE_PUBLIC_API_KEY,
@@ -94,10 +97,17 @@ async function getMyCalendarDataByDate(date) {
 
 server.tool(
   "getMyCalendarDataByDate",
+  "Get all calendar events/meetings for a specific date. Use this when the user asks about their schedule, meetings, or events on a particular day. Always pass the date as a string in YYYY-MM-DD format.",
   {
-    date: z.string().refine((val) => !isNaN(Date.parse(val)), {
-      message: "Invalid date format. Please provide a valid date string.",
-    }),
+    date: z
+      .string()
+      .describe(
+        "The date to fetch calendar events for, in YYYY-MM-DD format. Example: '2025-04-25'",
+      )
+      .refine((val) => !isNaN(Date.parse(val)), {
+        message:
+          "Invalid date format. Please provide a date in YYYY-MM-DD format.",
+      }),
   },
   async ({ date }) => {
     return {
@@ -110,15 +120,18 @@ server.tool(
     };
   },
 );
+
+// BUG FIX #1: "Object.enteries" → "Object.entries"
+// BUG FIX #2: "ok" → "OK" (Google Maps API returns uppercase status)
 async function fetchMaps(endpoint, params) {
   const url = new URL(`${BASEURL}/${endpoint}/json`);
-  Object.enteries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   url.searchParams.set("key", process.env.GOOGLE_MAPS_API_KEY);
 
   const res = await fetch(url.toString());
   const data = await res.json();
 
-  if (data.status !== "ok" && data.status !== "ZERO_RESULTS") {
+  if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
     throw new Error(
       `Google API error: ${data.status} - ${data.error_message || ""}`,
     );
@@ -197,7 +210,6 @@ server.tool(
   },
 );
 
-// ─── TOOL 3: Search Nearby Places ─────────────────────────
 server.tool(
   "searchNearbyPlaces",
   {
@@ -210,7 +222,6 @@ server.tool(
     keyword: z.string().optional().describe("Keyword to filter results"),
   },
   async ({ location, radius, type, keyword }) => {
-    // First geocode the location
     const geo = await fetchMaps("geocode", { address: location });
     const { lat, lng } = geo.results[0].geometry.location;
 
@@ -243,7 +254,6 @@ server.tool(
   },
 );
 
-// ─── TOOL 4: Get Place Details ─────────────────────────────
 server.tool(
   "getPlaceDetails",
   {
@@ -267,7 +277,6 @@ server.tool(
   },
 );
 
-// ─── TOOL 5: Get Directions ────────────────────────────────
 server.tool(
   "getDirections",
   {
@@ -312,7 +321,6 @@ server.tool(
   },
 );
 
-// ─── TOOL 6: Get Distance Matrix ───────────────────────────
 server.tool(
   "getDistance",
   {
@@ -352,7 +360,6 @@ server.tool(
   },
 );
 
-// ─── TOOL 7: Search Places by Text ────────────────────────
 server.tool(
   "searchPlaces",
   {
@@ -380,111 +387,6 @@ server.tool(
   },
 );
 
-// Search API'server
-server.tool(
-  "translateText",
-  {
-    text: z.string().describe("Text to translate"),
-    target: z.string().describe("Target language code e.g. hi, fr, es, de, ja"),
-    source: z
-      .string()
-      .optional()
-      .describe("Source language code (auto detect if not provided)"),
-  },
-  async ({ text, target, source }) => {
-    let url = `https://translation.googleapis.com/language/translate/v2?key=${process.env.GOOGLE_PUBLIC_API_KEY}`;
-    url += `&q=${encodeURIComponent(text)}`;
-    url += `&target=${target}`;
-    if (source) url += `&source=${source}`;
-
-    const data = await fetchAPI(url);
-    const result = data.data.translations[0];
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(
-            {
-              translated_text: result.translatedText,
-              detected_source_language: result.detectedSourceLanguage || source,
-              target_language: target,
-            },
-            null,
-            2,
-          ),
-        },
-      ],
-    };
-  },
-);
-
-// ─── TOOL 2: Detect Language ───────────────────────────────
-server.tool(
-  "detectLanguage",
-  {
-    text: z.string().describe("Text to detect language of"),
-  },
-  async ({ text }) => {
-    const url = `https://translation.googleapis.com/language/translate/v2/detect?key=${process.env.GOOGLE_PUBLIC_API_KEY}&q=${encodeURIComponent(text)}`;
-
-    const data = await fetchAPI(url);
-    const result = data.data.detections[0][0];
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(
-            {
-              language: result.language,
-              confidence: result.confidence,
-              is_reliable: result.isReliable,
-            },
-            null,
-            2,
-          ),
-        },
-      ],
-    };
-  },
-);
-
-// ─── TOOL 3: List Supported Languages ─────────────────────
-server.tool(
-  "getSupportedLanguages",
-  {
-    target: z
-      .string()
-      .optional()
-      .default("en")
-      .describe("Language to display language names in"),
-  },
-  async ({ target }) => {
-    const url = `https://translation.googleapis.com/language/translate/v2/languages?key=${process.env.GOOGLE_PUBLIC_API_KEY}&target=${target}`;
-
-    const data = await fetchAPI(url);
-    const languages = data.data.languages.map((l) => ({
-      code: l.language,
-      name: l.name,
-    }));
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(languages, null, 2),
-        },
-      ],
-    };
-  },
-);
-
-// ══════════════════════════════════════════════════════════
-//  GOOGLE BOOKS
-// ══════════════════════════════════════════════════════════
-
-// ─── TOOL 4: Search Books ──────────────────────────────────
 server.tool(
   "searchBooks",
   {
@@ -522,8 +424,9 @@ server.tool(
         authors: info.authors || [],
         publisher: info.publisher,
         published_date: info.publishedDate,
-        description:
-          info.description?.slice(0, 200) + "..." || "No description",
+        description: info.description
+          ? info.description.slice(0, 200) + "..."
+          : "No description",
         page_count: info.pageCount,
         categories: info.categories || [],
         language: info.language,
@@ -545,7 +448,6 @@ server.tool(
   },
 );
 
-// ─── TOOL 5: Get Book Details ──────────────────────────────
 server.tool(
   "getBookDetails",
   {
@@ -592,7 +494,6 @@ server.tool(
   },
 );
 
-// ─── TOOL 6: Search Books by Author ───────────────────────
 server.tool(
   "searchBooksByAuthor",
   {
@@ -626,141 +527,6 @@ server.tool(
         {
           type: "text",
           text: JSON.stringify(books, null, 2),
-        },
-      ],
-    };
-  },
-);
-
-// ══════════════════════════════════════════════════════════
-//  GOOGLE CUSTOM SEARCH
-// ══════════════════════════════════════════════════════════
-
-// ─── TOOL 7: Web Search ────────────────────────────────────
-server.tool(
-  "webSearch",
-  {
-    query: z.string().describe("Search query"),
-    numResults: z
-      .number()
-      .optional()
-      .default(10)
-      .describe("Number of results (max 10)"),
-    language: z.string().optional().describe("Language code e.g. en, hi"),
-    dateRestrict: z
-      .string()
-      .optional()
-      .describe(
-        "Restrict by date e.g. d1=past day, w1=past week, m1=past month",
-      ),
-  },
-  async ({ query, numResults, language, dateRestrict }) => {
-    let url = `https://www.googleapis.com/customsearch/v1?key=${process.env.GOOGLE_PUBLIC_API_KEY}&cx=${process.env.SEARCH_ENGINE_ID}`;
-    url += `&q=${encodeURIComponent(query)}`;
-    url += `&num=${numResults}`;
-    if (language) url += `&lr=lang_${language}`;
-    if (dateRestrict) url += `&dateRestrict=${dateRestrict}`;
-
-    const data = await fetchAPI(url);
-
-    if (!data.items || data.items.length === 0) {
-      return {
-        content: [{ type: "text", text: "No results found." }],
-      };
-    }
-
-    const results = data.items.map((item) => ({
-      title: item.title,
-      link: item.link,
-      snippet: item.snippet,
-      domain: item.displayLink,
-    }));
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(results, null, 2),
-        },
-      ],
-    };
-  },
-);
-
-// ─── TOOL 8: Image Search ──────────────────────────────────
-server.tool(
-  "imageSearch",
-  {
-    query: z.string().describe("Image search query"),
-    numResults: z.number().optional().default(10),
-  },
-  async ({ query, numResults }) => {
-    let url = `https://www.googleapis.com/customsearch/v1?key=${process.env.GOOGLE_PUBLIC_API_KEY}&cx=${process.env.SEARCH_ENGINE_ID}`;
-    url += `&q=${encodeURIComponent(query)}`;
-    url += `&searchType=image`;
-    url += `&num=${numResults}`;
-
-    const data = await fetchAPI(url);
-
-    if (!data.items) {
-      return {
-        content: [{ type: "text", text: "No images found." }],
-      };
-    }
-
-    const images = data.items.map((item) => ({
-      title: item.title,
-      link: item.link,
-      thumbnail: item.image?.thumbnailLink,
-      context_link: item.image?.contextLink,
-      width: item.image?.width,
-      height: item.image?.height,
-    }));
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(images, null, 2),
-        },
-      ],
-    };
-  },
-);
-
-// ─── TOOL 9: Site Search ───────────────────────────────────
-server.tool(
-  "siteSearch",
-  {
-    query: z.string().describe("Search query"),
-    site: z.string().describe("Site to search within e.g. reddit.com"),
-    numResults: z.number().optional().default(10),
-  },
-  async ({ query, site, numResults }) => {
-    const fullQuery = `site:${site} ${query}`;
-    let url = `https://www.googleapis.com/customsearch/v1?key=${process.env.GOOGLE_PUBLIC_API_KEY}&cx=${process.env.SEARCH_ENGINE_ID}`;
-    url += `&q=${encodeURIComponent(fullQuery)}`;
-    url += `&num=${numResults}`;
-
-    const data = await fetchAPI(url);
-
-    if (!data.items) {
-      return {
-        content: [{ type: "text", text: "No results found." }],
-      };
-    }
-
-    const results = data.items.map((item) => ({
-      title: item.title,
-      link: item.link,
-      snippet: item.snippet,
-    }));
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(results, null, 2),
         },
       ],
     };
