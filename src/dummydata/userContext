@@ -1,0 +1,70 @@
+// userContext = {
+//   👤 PROFILE INFORMATION
+//   profile: {
+//     name: "John Doe",
+//     email: "john@example.com",
+//     skills: ["React", "Node.js", "TypeScript", "PostgreSQL"],
+//     experience: "5 years full-stack development",
+//     portfolio: "https://john.dev",
+//     github: "https://github.com/johndoe",
+//     linkedin: "https://linkedin.com/in/johndoe",
+//     hourlyRate: 65,
+//     availability: "Full-time freelance",
+//     timezone: "Asia/Kolkata",
+//     preferredWorkTypes: ["remote", "contract", "freelance"]
+//   },
+//
+//   🎯 PREFERENCES
+//   preferences: {
+//     autoApplyThreshold: 70,        // Apply if match score > 70%
+//     maxApplicationsPerDay: 10,
+//     preferredLocations: ["remote", "USA", "Europe"],
+//     excludedCompanies: ["Competitor1", "Competitor2"],
+//     preferredJobTypes: ["contract", "freelance", "full-time"],
+//     minHourlyRate: 50,
+//     maxHourlyRate: 100,
+//     technologies: ["React", "Node.js", "TypeScript"],
+//     industries: ["tech", "fintech", "healthcare"]
+//   },
+//
+//   📊 CURRENT SESSION
+//   session: {
+//     sessionId: "uuid-1234",
+//     startTime: "2026-05-04T10:00:00Z",
+//     messageCount: 5,
+//     tokensUsedThisSession: 1250,
+//     lastActivity: "2026-05-04T10:30:00Z"
+//   },
+//
+//   📜 HISTORY
+//   history: {
+//     recentSearches: [
+//       { query: "React developer", timestamp: "2026-05-04T09:00:00Z" },
+//       { query: "Node.js contract", timestamp: "2026-05-03T15:00:00Z" }
+//     ],
+//     recentApplications: [
+//       { jobId: "123", title: "Senior React Dev", appliedAt: "2026-05-03T10:00:00Z" }
+//     ],
+//     recentJobsViewed: ["url1", "url2", "url3"],
+//     previousIntents: ["job_search", "calendar", "job_search"]
+//   },
+//
+//   🔧 SYSTEM STATE
+//   system: {
+//     isAuthenticated: true,
+//     hasValidApiKey: true,
+//     mcpServersConnected: ["calendar", "jobs", "email"],
+//     availableTools: ["searchFreelanceJobs", "getMyCalendarDataByDate", "sendEmail"],
+//     rateLimitRemaining: 95,
+//     quotaRemaining: 850000  // tokens remaining
+//   },
+//
+//   📍 CONTEXTUAL
+//   contextual: {
+//     currentView: "dashboard",      // chat, dashboard, calendar, jobs
+//     selectedJobId: "job_12345",    // Currently viewed job
+//     draftProposal: "Proposal text...",
+//     lastSearchQuery: "React developer",
+//     pendingActions: ["review_job_123", "send_followup_456"]
+//   }
+// }
