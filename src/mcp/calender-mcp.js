@@ -1,4 +1,3 @@
-// calendar-mcp.js - Fixed version
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { google } from "googleapis";
@@ -95,7 +94,6 @@ server.tool(
 async function init() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.log("✅ Calendar MCP Server running");
 }
 
 init();

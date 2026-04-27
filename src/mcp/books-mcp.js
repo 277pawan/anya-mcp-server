@@ -167,7 +167,6 @@ server.tool(
 async function init() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.log("✅ Books MCP Server running");
 }
 
 init();

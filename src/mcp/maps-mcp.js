@@ -279,7 +279,6 @@ server.tool(
 async function init() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.log("✅ Maps MCP Server running");
 }
 
 init();

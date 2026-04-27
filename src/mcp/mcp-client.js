@@ -35,11 +35,8 @@ class MCPClient {
    * Start an MCP server
    */
   startServer(name, filePath) {
-    console.log(`🚀 Starting ${name} MCP server...`);
-
     // Get absolute path to the MCP file
     const absolutePath = path.resolve(__dirname, filePath);
-    console.log(`📁 Path: ${absolutePath}`);
 
     const serverProcess = spawn("node", [absolutePath], {
       stdio: ["pipe", "pipe", "pipe"],
@@ -58,17 +55,7 @@ class MCPClient {
       const output = data.toString().trim();
       if (output.includes("✅") || output.includes("running")) {
         this.servers.get(name).isReady = true;
-        console.log(`✅ ${name} MCP server ready`);
       }
-      if (output) console.log(`[${name}] ${output}`);
-    });
-
-    serverProcess.stderr.on("data", (data) => {
-      console.error(`[${name} ERROR] ${data.toString().trim()}`);
-    });
-
-    serverProcess.on("error", (err) => {
-      console.error(`[${name}] Process error:`, err.message);
     });
 
     return serverProcess;
@@ -86,7 +73,6 @@ class MCPClient {
       }
       await new Promise((r) => setTimeout(r, 100));
     }
-    console.warn(`⚠️ ${name} server may not be ready`);
     return false;
   }
 
@@ -99,7 +85,6 @@ class MCPClient {
     if (server) {
       server.tools.push(toolName);
     }
-    console.log(`📌 Registered: ${toolName} → ${serverName}`);
   }
 
   /**
@@ -194,11 +179,9 @@ class MCPClient {
    * Shutdown all servers
    */
   shutdown() {
-    console.log("🛑 Shutting down all MCP servers...");
     for (const [name, server] of this.servers.entries()) {
       if (server.process) {
         server.process.kill("SIGTERM");
-        console.log(`✅ Stopped ${name}`);
       }
     }
   }
@@ -213,8 +196,6 @@ const mcpClient = new MCPClient();
 
 // Initialize all MCP servers (call ONCE at startup)
 export async function initAllMCPServers() {
-  console.log("\n📡 Initializing MCP Servers...\n");
-
   // Start Calendar MCP (path relative to src/mcp/)
   mcpClient.startServer("calendar", "./calender-mcp.js"); // Note: calender-mcp.js (spelling!)
   await mcpClient.waitForServer("calendar");
@@ -238,7 +219,6 @@ export async function initAllMCPServers() {
   mcpClient.registerTool("getBookDetails", "books");
   mcpClient.registerTool("searchBooksByAuthor", "books");
 
-  console.log("\n✅ All MCP servers initialized!\n");
   return mcpClient;
 }
 
@@ -253,7 +233,6 @@ export async function getCalendar(date) {
     }
     return { error: "No response from calendar server" };
   } catch (error) {
-    console.error("Calendar error:", error);
     return { error: error.message };
   }
 }
@@ -264,7 +243,6 @@ export async function geocode(address) {
     const result = await mcpClient.callTool("geocodeAddress", { address });
     return JSON.parse(result.result.content[0].text);
   } catch (error) {
-    console.error("Geocode error:", error);
     return { error: error.message };
   }
 }
@@ -274,7 +252,6 @@ export async function reverseGeocode(lat, lng) {
     const result = await mcpClient.callTool("reverseGeocode", { lat, lng });
     return JSON.parse(result.result.content[0].text);
   } catch (error) {
-    console.error("Reverse geocode error:", error);
     return { error: error.message };
   }
 }
@@ -294,7 +271,6 @@ export async function searchNearbyPlaces(
     });
     return JSON.parse(result.result.content[0].text);
   } catch (error) {
-    console.error("Search nearby error:", error);
     return { error: error.message };
   }
 }
@@ -306,7 +282,6 @@ export async function getPlaceDetails(placeId) {
     });
     return JSON.parse(result.result.content[0].text);
   } catch (error) {
-    console.error("Place details error:", error);
     return { error: error.message };
   }
 }
@@ -320,7 +295,6 @@ export async function getDirections(origin, destination, mode = "driving") {
     });
     return JSON.parse(result.result.content[0].text);
   } catch (error) {
-    console.error("Directions error:", error);
     return { error: error.message };
   }
 }
@@ -334,7 +308,6 @@ export async function getDistance(origins, destinations, mode = "driving") {
     });
     return JSON.parse(result.result.content[0].text);
   } catch (error) {
-    console.error("Distance error:", error);
     return { error: error.message };
   }
 }
@@ -344,7 +317,6 @@ export async function searchPlaces(query) {
     const result = await mcpClient.callTool("searchPlaces", { query });
     return JSON.parse(result.result.content[0].text);
   } catch (error) {
-    console.error("Search places error:", error);
     return { error: error.message };
   }
 }
@@ -359,7 +331,6 @@ export async function searchBooks(query, maxResults = 10, language = null) {
     });
     return JSON.parse(result.result.content[0].text);
   } catch (error) {
-    console.error("Search books error:", error);
     return { error: error.message };
   }
 }
@@ -371,7 +342,6 @@ export async function getBookDetails(volumeId) {
     });
     return JSON.parse(result.result.content[0].text);
   } catch (error) {
-    console.error("Book details error:", error);
     return { error: error.message };
   }
 }
@@ -384,7 +354,6 @@ export async function searchBooksByAuthor(author, maxResults = 10) {
     });
     return JSON.parse(result.result.content[0].text);
   } catch (error) {
-    console.error("Search by author error:", error);
     return { error: error.message };
   }
 }
