@@ -15,25 +15,7 @@ import {
   getStatus as getAIRouterStatus,
 } from "./src/ai-intent/ai-intent-router.js";
 
-dotenv.config();
-
-console.log("🚀 ANYA MCP SERVER - Complete Test Suite");
-console.log("=".repeat(60));
-
-/**
- * Test 1: Initialize all MCP servers
- */
-async function testMCPServers() {
-  console.log("\n📡 TEST 1: Starting MCP Servers\n");
-
-  await initAllMCPServers();
-
-  console.log("\n📊 MCP Server Status:");
-  console.table(getMCPStatus());
-
-  console.log("\n🔧 Registered Tools:");
-  console.table(listMCPTools());
-}
+dotenv.config({ quiet: true });
 
 /**
  * Test 2: Test Calendar MCP directly
@@ -73,7 +55,6 @@ async function testMapsMCP() {
  * Test 4: Test Books MCP directly
  */
 async function testBooksMCP() {
-  console.log("\n" + "=".repeat(60));
   console.log("📚 TEST 4: Books MCP Direct Call\n");
 
   console.log("📖 Searching for 'system design' books:");
@@ -88,7 +69,11 @@ async function testAIRouter() {
   console.log("\n" + "=".repeat(60));
   console.log("🤖 TEST 5: AI Router with MCP Integration\n");
 
-  const testCases = ["hi how are you", "find hospitals near Connaught Place"];
+  const testCases = [
+    "hi how are you",
+    "2026-05-28",
+    // "find hospitals near Connaught Place",
+  ];
 
   for (const testCase of testCases) {
     console.log(`\n📝 Input: "${testCase}"`);
@@ -105,7 +90,8 @@ async function testAIRouter() {
  */
 async function main() {
   try {
-    await testMCPServers();
+    await initAllMCPServers();
+    // await testMCPServers();
     // await testAIRouter();
 
     process.on("SIGINT", async () => {

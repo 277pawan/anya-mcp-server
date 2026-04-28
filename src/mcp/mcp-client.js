@@ -7,12 +7,11 @@ import path from "path";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 function cleanMCPParams(params) {
   const cleaned = {};
   for (const [key, value] of Object.entries(params)) {
-    // Skip null, undefined, empty strings, NaN
     if (
       value !== null &&
       value !== undefined &&
@@ -51,13 +50,12 @@ class MCPClient {
     });
 
     // Log output
-    serverProcess.stdout.on("data", (data) => {
-      const output = data.toString().trim();
-      if (output.includes("✅") || output.includes("running")) {
-        this.servers.get(name).isReady = true;
-      }
+    serverProcess.on("spawn", () => {
+      setTimeout(() => {
+        const s = this.servers.get(name);
+        if (s) s.isReady = true;
+      }, 500); // give it 500ms to initialize
     });
-
     return serverProcess;
   }
 
@@ -190,18 +188,11 @@ class MCPClient {
 // Singleton instance
 const mcpClient = new MCPClient();
 
-// ============================================
-// EXPORT SIMPLE FUNCTIONS
-// ============================================
-
-// Initialize all MCP servers (call ONCE at startup)
 export async function initAllMCPServers() {
-  // Start Calendar MCP (path relative to src/mcp/)
   mcpClient.startServer("calendar", "./calender-mcp.js"); // Note: calender-mcp.js (spelling!)
   await mcpClient.waitForServer("calendar");
   mcpClient.registerTool("getMyCalendarDataByDate", "calendar");
 
-  // Start Maps MCP
   mcpClient.startServer("maps", "./maps-mcp.js");
   await mcpClient.waitForServer("maps");
   mcpClient.registerTool("geocodeAddress", "maps");
@@ -212,7 +203,6 @@ export async function initAllMCPServers() {
   mcpClient.registerTool("getDistance", "maps");
   mcpClient.registerTool("searchPlaces", "maps");
 
-  // Start Books MCP
   mcpClient.startServer("books", "./books-mcp.js");
   await mcpClient.waitForServer("books");
   mcpClient.registerTool("searchBooks", "books");
@@ -222,7 +212,6 @@ export async function initAllMCPServers() {
   return mcpClient;
 }
 
-// Calendar Functions
 export async function getCalendar(date) {
   try {
     const result = await mcpClient.callTool("getMyCalendarDataByDate", {
@@ -237,7 +226,6 @@ export async function getCalendar(date) {
   }
 }
 
-// Maps Functions
 export async function geocode(address) {
   try {
     const result = await mcpClient.callTool("geocodeAddress", { address });

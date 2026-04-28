@@ -7,13 +7,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Load .env once from root
-dotenv.config({ path: path.resolve(__dirname, "../.env") });
+dotenv.config({ quiet: true });
 
 export const CONFIG = {
   // Google APIs
   GOOGLE_PUBLIC_API_KEY: process.env.GOOGLE_PUBLIC_API_KEY,
   GOOGLE_MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY,
   CALENDAR_ID: process.env.CALENDAR_ID,
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+  GOOGLE_REFRESH_TOKEN: process.env.GOOGLE_REFRESH_TOKEN,
 
   // AI APIs
   GROQ_API_KEY: process.env.GROQ_API_KEY,

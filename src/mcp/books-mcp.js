@@ -132,7 +132,7 @@ server.tool(
     maxResults: z.number().optional().default(4),
   },
   async ({ author, maxResults }) => {
-    const url = `https://www.googleapis.com/books/v1/volumes?key=${CONIFG.GOOGLE_PUBLIC_API_KEY}&q=inauthor:${encodeURIComponent(author)}&maxResults=${maxResults}`;
+    const url = `https://www.googleapis.com/books/v1/volumes?key=${CONFIG.GOOGLE_PUBLIC_API_KEY}&q=inauthor:${encodeURIComponent(author)}&maxResults=${maxResults}`;
 
     const data = await fetchAPI(url);
 

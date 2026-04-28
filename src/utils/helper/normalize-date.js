@@ -1,5 +1,5 @@
 /**
- * Normalize various date formats to YYYY-MM-DD
+console * Normalize various date formats to YYYY-MM-DD
  * Handles: "today", "tomorrow", "yesterday", "next friday",
  *          "April 25", "25th April", "2025-04-25", etc.
  */

@@ -9,7 +9,7 @@ import {
   searchBooks,
 } from "../mcp/mcp-client.js";
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 // ============================================
 // INITIALIZE GROQ CLIENT
@@ -22,8 +22,8 @@ const groq = new Groq({
 // MODEL STRATEGY
 // ============================================
 const MODELS = {
-  INTENT_CLASSIFIER: "llama-3.1-8b-instant",
-  QUERY_ENHANCER: "llama-3.1-8b-instant",
+  INTENT_CLASSIFIER: "qwen/qwen3-32b",
+  QUERY_ENHANCER: "llama-3.3-70b-versatile",
   PROPOSAL_GENERATOR: "mixtral-8x7b-32768",
   CASUAL_CHAT: "llama-3.1-8b-instant",
 };
