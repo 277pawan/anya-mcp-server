@@ -14,6 +14,7 @@ import {
   routeUserMessage,
   getStatus as getAIRouterStatus,
 } from "./src/ai-intent/ai-intent-router.js";
+import { findLeadsForProposal } from "./src/search/leadPipeline.js";
 
 dotenv.config({ quiet: true });
 
@@ -86,6 +87,31 @@ async function testAIRouter() {
 }
 
 /**
+ * Test 6: Test Lead Pipeline Integration
+ */
+async function testLeadPipeline() {
+  console.log("\n" + "=".repeat(60));
+  console.log("🕵️  TEST 6: Lead Pipeline Check\n");
+
+  const query = "Recruiters hiring React frontend developers in San Francisco";
+  console.log(`🔎 Running lead search for: "${query}"`);
+
+  // Testing the integration with a limited lead request to save API usage if tests are run frequently
+  const result = await findLeadsForProposal(query, {
+    maxLeads: 2,
+    minScore: 50,
+    generateTemplates: true,
+    objective: "job_hunting",
+    userContext: {
+      name: "Pawan Bisht",
+      role: "Senior React Developer",
+      pitch: "I have 5 years of experience building highly responsive web apps with Next.js and React."
+    }
+  });
+  console.log("✅ Lead Pipeline Result:", JSON.stringify(result, null, 2));
+}
+
+/**
  * Main function
  */
 async function main() {
@@ -93,6 +119,7 @@ async function main() {
     await initAllMCPServers();
     // await testMCPServers();
     // await testAIRouter();
+    await testLeadPipeline();
 
     process.on("SIGINT", async () => {
       console.log("\n\n🛑 Shutting down...");

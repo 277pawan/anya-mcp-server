@@ -40,7 +40,6 @@ rl.question("📋 Paste the authorization code here: ", async (code) => {
     console.log(`GOOGLE_CLIENT_ID=${CONFIG.GOOGLE_CLIENT_ID}`);
     console.log(`GOOGLE_CLIENT_SECRET=${CONFIG.GOOGLE_CLIENT_SECRET}`);
     console.log(`GOOGLE_REFRESH_TOKEN=${tokens.refresh_token}`);
-    console.log("\n⚠️ Keep this refresh token secret!\n");
   } catch (error) {
     console.error("\n❌ Error:", error.message);
     if (error.response?.data) {

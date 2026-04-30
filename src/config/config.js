@@ -27,6 +27,13 @@ export const CONFIG = {
   TIMEZONE: "Asia/Kolkata",
   BASE_MAPS_URL: "https://maps.googleapis.com/maps/api",
 
+  EXA_API_KEY: process.env.EXA_API_KEY,
+  BRAVE_API_KEY: process.env.BRAVE_API_KEY,
+  PROSPEO_API_KEY: process.env.PROSPEO_API_KEY,
+  TINYFISH_API_KEY: process.env.TINYFISH_API_KEY,
+  FIRECRAWL_API_KEY: process.env.FIRECRAWL_API_KEY,
+  SERP_API_KEY: process.env.SERP_API_KEY,
+
   // Check if keys are loaded
   isConfigured() {
     return !!this.GOOGLE_PUBLIC_API_KEY && !!this.GROQ_API_KEY;
