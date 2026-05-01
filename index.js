@@ -72,7 +72,7 @@ async function testAIRouter() {
 
   const testCases = [
     "hi how are you",
-    "2026-05-28",
+    // "2026-05-28",
     // "find hospitals near Connaught Place",
   ];
 
@@ -87,28 +87,20 @@ async function testAIRouter() {
 }
 
 /**
- * Test 6: Test Lead Pipeline Integration
+ * Test 6: Test Lead Pipeline via AI Intent Router
  */
 async function testLeadPipeline() {
   console.log("\n" + "=".repeat(60));
-  console.log("🕵️  TEST 6: Lead Pipeline Check\n");
+  console.log("🕵️  TEST 6: Lead Pipeline Check (Via AI Router)\n");
 
-  const query = "Recruiters hiring React frontend developers in San Francisco";
-  console.log(`🔎 Running lead search for: "${query}"`);
+  const query =
+    "Find me 2 remote freelancing job for me  i know react and node js and i want to work in fintech industry and i want to earn more than 100 dollars per day and also find me the contact details of the person who posted the job";
 
-  // Testing the integration with a limited lead request to save API usage if tests are run frequently
-  const result = await findLeadsForProposal(query, {
-    maxLeads: 2,
-    minScore: 50,
-    generateTemplates: true,
-    objective: "job_hunting",
-    userContext: {
-      name: "Pawan Bisht",
-      role: "Senior React Developer",
-      pitch: "I have 5 years of experience building highly responsive web apps with Next.js and React."
-    }
-  });
-  console.log("✅ Lead Pipeline Result:", JSON.stringify(result, null, 2));
+  console.log(`🔎 Simulating user chat message: "${query}"`);
+
+  // Testing the integration using natural language routed through Groq intent parser
+  const result = await routeUserMessage(query);
+  console.log("✅ AI Router Result:", JSON.stringify(result, null, 2));
 }
 
 /**
@@ -116,10 +108,10 @@ async function testLeadPipeline() {
  */
 async function main() {
   try {
-    await initAllMCPServers();
+    // await initAllMCPServers();
     // await testMCPServers();
-    // await testAIRouter();
-    await testLeadPipeline();
+    await testAIRouter();
+    // await testLeadPipeline();
 
     process.on("SIGINT", async () => {
       console.log("\n\n🛑 Shutting down...");

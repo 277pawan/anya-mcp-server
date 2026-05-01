@@ -20,6 +20,7 @@ export const CONFIG = {
 
   // AI APIs
   GROQ_API_KEY: process.env.GROQ_API_KEY,
+  MISTRAL_API_KEY: process.env.MISTRAL_API_KEY,
   DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
 
@@ -36,6 +37,9 @@ export const CONFIG = {
 
   // Check if keys are loaded
   isConfigured() {
-    return !!this.GOOGLE_PUBLIC_API_KEY && !!this.GROQ_API_KEY;
+    return (
+      !!this.GOOGLE_PUBLIC_API_KEY &&
+      (!!this.GROQ_API_KEY || !!this.MISTRAL_API_KEY)
+    );
   },
 };

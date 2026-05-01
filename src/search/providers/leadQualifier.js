@@ -1,7 +1,11 @@
-// src/search/providers/leadQualifier.js
-// Uses your existing Groq models (free tier!)
+import { CONFIG } from "../../config/config.js";
+import { chatWithGlobalFallback } from "../../ai/llm-fallback.js";
 
-const LEAD_QUALIFIER_MODEL = "llama-3.1-8b-instant"; // High RPM, perfect for this
+// src/search/providers/leadQualifier.js
+const LEAD_QUALIFIER_MODELS = [
+  "llama-3.1-8b-instant",
+  "llama-3.3-70b-versatile",
+];
 
 export async function qualifyLeads(
   scrapedData,
@@ -63,38 +67,35 @@ Identify relevant leads that match: ${queryContext}
 
 Return ONLY valid JSON matching the specified format.`;
 
-  const response = await fetch(
-    "https://api.groq.com/openai/v1/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: LEAD_QUALIFIER_MODEL,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.3,
-        response_format: { type: "json_object" },
-      }),
-    },
-  );
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    console.error("Groq API Error:", data);
-    return { success: false, error: data.error?.message || "Groq API error" };
+  if (!apiKey && !process.env.MISTRAL_API_KEY && !CONFIG.MISTRAL_API_KEY) {
+    return { success: false, error: "Missing GROQ_API_KEY and MISTRAL_API_KEY" };
   }
 
   let result;
+  const response = await chatWithGlobalFallback({
+    taskName: "Lead qualification",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: 0.3,
+    maxTokens: 700,
+    responseFormat: { type: "json_object" },
+    groqModels: LEAD_QUALIFIER_MODELS,
+    mistralModels: ["mistral-small-latest"],
+    groqApiKey: apiKey || process.env.GROQ_API_KEY || CONFIG.GROQ_API_KEY,
+    mistralApiKey: process.env.MISTRAL_API_KEY || CONFIG.MISTRAL_API_KEY,
+  });
+
+  if (!response.success) {
+    console.error("Lead Qualifier API Error:", response.error);
+    return { success: false, error: response.error || "AI provider error" };
+  }
+
   try {
-    result = JSON.parse(data.choices[0].message.content);
+    result = JSON.parse(response.content);
   } catch (err) {
-    console.error("Failed to parse Groq response:", err);
+    console.error("Failed to parse AI response:", err);
     return { success: false, error: "Failed to parse JSON from AI response" };
   }
 

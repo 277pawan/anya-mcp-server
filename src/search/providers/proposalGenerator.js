@@ -1,6 +1,10 @@
 import { CONFIG } from "../../config/config.js";
+import { chatWithGlobalFallback } from "../../ai/llm-fallback.js";
 
-const PROPOSAL_MODEL = "llama-3.1-8b-instant";
+const PROPOSAL_MODELS = [
+  "llama-3.1-8b-instant",
+  "llama-3.3-70b-versatile",
+];
 
 export async function generateProposal(lead, userContext, objective = "freelance_pitch") {
     const systemPrompt = `You are an expert copywriter and sales strategist. Your goal is to write a highly converting, personalized cold email. 
@@ -34,39 +38,34 @@ ${JSON.stringify(userContext, null, 2)}
 Generate the personalized email.`;
 
     try {
-        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                Authorization: `Bearer ${process.env.GROQ_API_KEY || CONFIG.GROQ_API_KEY}`,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                model: PROPOSAL_MODEL,
-                messages: [
-                    { role: "system", content: systemPrompt },
-                    { role: "user", content: userPrompt },
-                ],
-                temperature: 0.5,
-                response_format: { type: "json_object" },
-            }),
-        });
+      const response = await chatWithGlobalFallback({
+        taskName: "Proposal generation",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 0.5,
+        maxTokens: 320,
+        responseFormat: { type: "json_object" },
+        groqModels: PROPOSAL_MODELS,
+        mistralModels: ["mistral-small-latest"],
+        groqApiKey: process.env.GROQ_API_KEY || CONFIG.GROQ_API_KEY,
+        mistralApiKey: process.env.MISTRAL_API_KEY || CONFIG.MISTRAL_API_KEY,
+      });
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            console.error("Groq API Error in Proposal Generation:", errorData);
-            return { success: false, error: "Failed to generate proposal" };
-        }
+      if (!response.success) {
+        console.error("Proposal Generator Error:", response.error);
+        return { success: false, error: response.error || "Failed to generate proposal" };
+      }
 
-        const data = await response.json();
-        const result = JSON.parse(data.choices[0].message.content);
-
-        return {
-            success: true,
-            subject: result.subject,
-            body: result.body,
-        };
+      const result = JSON.parse(response.content);
+      return {
+        success: true,
+        subject: result.subject,
+        body: result.body,
+      };
     } catch (err) {
-        console.error("Proposal Generator Error:", err.message);
-        return { success: false, error: err.message };
+      console.error("Proposal Generator Error:", err.message);
+      return { success: false, error: err.message };
     }
 }

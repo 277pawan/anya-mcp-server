@@ -1,5 +1,6 @@
 // src/tools/proposalTools.js
 import { findLeadsForProposal } from "../search/leadPipeline.js";
+import { chatWithGlobalFallback } from "../ai/llm-fallback.js";
 
 server.tool(
   "findProposalLeads",
@@ -68,21 +69,17 @@ server.tool(
   async ({ leadName, company, context, yourService, yourName, yourEmail }) => {
     const systemPrompt = `You are a professional proposal writer. Create a concise, personalized proposal.`;
 
-    const response = await fetch(
-      "https://api.groq.com/openai/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "llama-3.1-8b-instant",
-          messages: [
-            { role: "system", content: systemPrompt },
-            {
-              role: "user",
-              content: `
+    const response = await chatWithGlobalFallback({
+      taskName: "proposalTools.generateProposal",
+      groqModels: ["llama-3.1-8b-instant", "qwen/qwen3-32b"],
+      mistralModels: ["mistral-small-latest"],
+      temperature: 0.7,
+      maxTokens: 400,
+      messages: [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: `
 Write a short proposal for:
 - To: ${leadName} at ${company}
 - Context: ${context}
@@ -95,15 +92,13 @@ Make it:
 3. Include a clear call to action
 4. Professional but friendly tone
 `,
-            },
-          ],
-          temperature: 0.7,
-        }),
-      },
-    );
+        },
+      ],
+    });
 
-    const data = await response.json();
-    const proposal = data.choices[0].message.content;
+    const proposal = response.success
+      ? response.content
+      : "I am interested in helping with this project and would love to discuss next steps.";
 
     return {
       content: [

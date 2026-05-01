@@ -13,7 +13,11 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
     includeContactInfo = true,
     generateTemplates = false, // Automatically create email templates
     objective = "freelance_pitch",
-    userContext = { name: "Your Name", role: "Developer", pitch: "I build amazing experiences." }
+    userContext = {
+      name: "Your Name",
+      role: "Developer",
+      pitch: "I build amazing experiences.",
+    },
   } = options;
 
   console.log(`🔍 Searching for: ${targetQuery}`);
@@ -27,25 +31,44 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
 
   console.log(`📄 Found ${searchResults.results.length} potential sources`);
 
-  // Step 2: Scrape the top results
+  // Step 2: Scrape the top results (with strict timeout to prevent hanging)
   const scrapedData = [];
-  for (const result of searchResults.results.slice(0, 10)) {
+
+  // Helper for timeout
+  const withTimeout = (promise, ms) => {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms),
+      ),
+    ]);
+  };
+
+  for (let i = 0; i < Math.min(searchResults.results.length, 10); i++) {
+    const result = searchResults.results[i];
     try {
-      const scraped = await scrapeUrl(result.url);
-      if (scraped.success) {
+      console.log(
+        `   [${i + 1}/10] 🌐 Scraping: ${result.url.substring(0, 50)}...`,
+      );
+      // Force 8 second timeout per scrape
+      const scraped = await withTimeout(scrapeUrl(result.url), 8000);
+
+      if (scraped && scraped.success) {
         scrapedData.push({
           url: result.url,
           title: result.title,
           content: scraped.markdown || scraped.content,
-          snippet: result.description || result.content?.slice(0, 500),
+          snippet: result.description || "No description available",
         });
       }
     } catch (error) {
-      console.warn(`Failed to scrape ${result.url}:`, error.message);
+      console.log(
+        `   ❌ Failed to scrape ${result.url.substring(0, 30)}: ${error.message}`,
+      );
     }
 
     // Small delay to be polite
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 300));
   }
 
   // Step 3: AI qualification
@@ -58,7 +81,14 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
   );
 
   if (!qualified.qualifiedLeads?.length) {
-    return { success: false, error: "No qualified leads found" };
+    console.log(
+      `⚠️ AI found no qualified leads out of ${scrapedData.length} scraped sources.`,
+    );
+    return {
+      success: false,
+      error:
+        "No qualified leads found. Sources might not be actual job postings.",
+    };
   }
 
   console.log(`✅ Found ${qualified.qualifiedLeads.length} qualified leads`);
@@ -120,7 +150,10 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
     for (const lead of leads) {
       const proposalData = await generateProposal(lead, userContext, objective);
       if (proposalData.success) {
-        lead.proposal = { subject: proposalData.subject, body: proposalData.body };
+        lead.proposal = {
+          subject: proposalData.subject,
+          body: proposalData.body,
+        };
       }
     }
   }
