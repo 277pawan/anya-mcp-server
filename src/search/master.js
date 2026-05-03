@@ -30,7 +30,9 @@ export async function searchWeb(query, searchType = "semantic", options = {}) {
     // Fallback to Brave
     if (process.env.BRAVE_API_KEY) {
         try {
-            const braveResult = await searchWithBrave(query, process.env.BRAVE_API_KEY);
+            const braveResult = await searchWithBrave(query, process.env.BRAVE_API_KEY, {
+                limit,
+            });
             if (braveResult?.web?.results) {
                 return {
                     success: true,

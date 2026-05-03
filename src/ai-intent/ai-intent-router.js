@@ -9,15 +9,49 @@ import {
   searchBooks,
 } from "../mcp/mcp-client.js";
 import { findLeadsForProposal } from "../search/leadPipeline.js";
+import {
+  DEFAULT_LEAD_FETCH_LIMIT,
+  DEFAULT_MAX_LEADS,
+} from "../search/leadPipelineDefaults.js";
 
 dotenv.config({ quiet: true });
+
+function resolvePipelineMaxLeads(entities, pipeline) {
+  const raw = entities?.maxLeads ?? pipeline?.maxLeads;
+  if (raw == null || raw === "") return DEFAULT_MAX_LEADS;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_MAX_LEADS;
+}
+
+function resolvePipelineFetchLimit(pipeline) {
+  const raw = pipeline?.fetchLimit;
+  if (raw == null || raw === "") return DEFAULT_LEAD_FETCH_LIMIT;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_LEAD_FETCH_LIMIT;
+}
+
+/** Params for searchFreelanceJobs / searchGeneralJobs; limits come from UI/DB via userContext.pipelineSettings unless the user explicitly asks for a count. */
+function buildLeadPipelineToolParams(classification, userContext, query) {
+  const pipeline = userContext.pipelineSettings || {};
+  const entities = classification.entities || {};
+  return {
+    query,
+    location: entities.location || "remote",
+    skills: entities.skills || [],
+    maxLeads: resolvePipelineMaxLeads(entities, pipeline),
+    fetchLimit: resolvePipelineFetchLimit(pipeline),
+    pipelineSettings: pipeline,
+    generateTemplates: entities.generateTemplates,
+    objective: entities.objective,
+  };
+}
 
 // ============================================
 // MODEL STRATEGY
 // ============================================
 const MODELS = {
   INTENT_CLASSIFIER: "qwen/qwen3-32b",
-  QUERY_ENHANCER: "llama-3.3-70b-versatile",
+  QUERY_ENHANCER: "llama-3.3-70b-versatile", // fallback if Gemini fails
   PROPOSAL_GENERATOR: "mixtral-8x7b-32768",
   CASUAL_CHAT: "llama-3.1-8b-instant",
 };
@@ -30,14 +64,13 @@ function inferJobSearchMode(userMessage, entities = {}) {
   const freelanceSignals =
     /freelance|contract|gig|client|upwork|toptal|proposal|b2b_sales/.test(text);
   const fulltimeSignals =
-    /full[-\s]?time|mnc|company|corporate|permanent|salary|employment|job_hunting/.test(
+    /full[-\s]?time|mnc|company|corporate|permanent|salary|employment|job_hunting|software\s*engineer|software\s*developer|full[-\s]?stack|backend|frontend|sde/.test(
       text,
     );
 
   if (freelanceSignals && !fulltimeSignals) return "freelance";
   if (fulltimeSignals && !freelanceSignals) return "general";
 
-  // If uncertain, default to general job search intent.
   return "general";
 }
 
@@ -81,6 +114,7 @@ function cleanParams(params) {
 
 // ============================================
 // GENERIC LLM CALL (Groq primary + Mistral fallback)
+// (unchanged – kept for other tasks)
 // ============================================
 async function callGroq(prompt, systemPrompt, model, maxTokens = 500) {
   if (!checkRateLimit()) {
@@ -115,7 +149,7 @@ async function callGroq(prompt, systemPrompt, model, maxTokens = 500) {
 }
 
 // ============================================
-// 1. INTENT CLASSIFIER
+// 1. INTENT CLASSIFIER (unchanged)
 // ============================================
 async function classifyIntent(message) {
   const systemPrompt = `You are a precise intent classifier. Return ONLY valid JSON, no other text.`;
@@ -136,10 +170,10 @@ async function classifyIntent(message) {
         "query": "string or null",
         "placeType": "restaurant|hospital|cafe|etc",
         "author": "string or null",
-        "maxLeads": "number (default 5)",
-        "generateTemplates": "boolean (default false)",
-        "objective": "job_hunting|freelance_pitch|b2b_sales (default job_hunting)",
-        "employmentType": "full_time|freelance|contract|internship|part_time (default full_time)"
+        "maxLeads": null,
+        "generateTemplates": false,
+        "objective": "job_hunting|freelance_pitch|b2b_sales",
+        "employmentType": "full_time|freelance|contract|internship|part_time"
       }
     }
     
@@ -153,6 +187,11 @@ async function classifyIntent(message) {
     - application: apply, proposal, submit
     - followup: follow up, reminder, check status
     - mixed: STRICTLY for completely unrelated requests (e.g. "find jobs AND check calendar"). Do NOT use "mixed" if they just want any type of jobs/leads; that is purely "job_search".
+    
+    For job_search / leads:
+    - Fill "skills", "location", "employmentType", and "objective" when inferable. Use rich "query" only if the user gave a clear role/stack phrase worth preserving verbatim.
+    - maxLeads: MUST be null unless the user explicitly asks for a numeric cap (e.g. "only 5 leads", "top 3 companies"). Do NOT invent a number; the app supplies defaults from user settings.
+    - generateTemplates: true only if they ask for draft emails or proposal text.
   `;
 
   const result = await callGroq(
@@ -168,17 +207,15 @@ async function classifyIntent(message) {
 
   try {
     let cleanJson = result.content
-      .replace(/<think>[\s\S]*?<\/think>\n?/g, "") // Strip Qwen/DeepSeek thought blocks
+      .replace(/<think>[\s\S]*?<\/think>\n?/g, "")
       .replace(/```json\n?/g, "")
       .replace(/```\n?/g, "")
       .trim();
-    // Sometimes it still returns text before JSON
     const jsonStart = cleanJson.indexOf("{");
     const jsonEnd = cleanJson.lastIndexOf("}");
     if (jsonStart !== -1 && jsonEnd !== -1) {
       cleanJson = cleanJson.substring(jsonStart, jsonEnd + 1);
     } else {
-      // If there is no '{', the model probably hit the token limit during <think>
       console.warn(
         "⚠️ Model hit token limit or returned no JSON. Defaulting to casual intent.",
       );
@@ -192,19 +229,27 @@ async function classifyIntent(message) {
 }
 
 // ============================================
-// 2. QUERY ENHANCER
+// 2. QUERY ENHANCER – *UPDATED* WITH GEMINI FIRST
 // ============================================
 async function enhanceJobQuery(originalMessage, extractedEntities) {
   const systemPrompt = `You are a search query optimizer. Return ONLY the enhanced query string, no explanations.`;
   const employmentType = extractedEntities.employmentType || "full_time";
   const objective = extractedEntities.objective || "job_hunting";
+  const roleHint = extractedEntities.skills?.length
+    ? `${extractedEntities.skills.join(", ")}, software engineer, full-stack developer`
+    : "software engineer, full-stack developer, web developer";
   const jobHint =
     employmentType === "freelance" || objective === "freelance_pitch"
       ? "freelance, contract, remote"
-      : "full-time, hiring, careers, role";
+      : "full-time, hiring, careers, role, software engineer, full-stack developer";
+
+  const platformHint =
+    employmentType === "freelance" || objective === "freelance_pitch"
+      ? "(site:linkedin.com/jobs OR site:linkedin.com/posts OR site:upwork.com OR site:wellfound.com OR site:arc.dev OR site:indeed.com OR site:in.indeed.com OR site:foundit.in)"
+      : "(site:linkedin.com/jobs OR site:naukri.com OR site:indeed.com OR site:in.indeed.com OR site:foundit.in OR site:instahyre.com OR site:wellfound.com OR site:apna.co OR site:monsterindia.com OR site:jobtatkal.com)";
 
   const prompt = `
-    Enhance this job search query.
+    Turn this into ONE high-recall web search query for real roles and hiring posts (not tutorials or dictionaries).
     
     ORIGINAL: "${originalMessage}"
     SKILLS: ${extractedEntities.skills?.join(", ") || "any"}
@@ -213,31 +258,41 @@ async function enhanceJobQuery(originalMessage, extractedEntities) {
     OBJECTIVE: ${objective}
     
     Rules:
-    - Add these relevant intent keywords: ${jobHint}
-    - Expand tech abbreviations (React → React.js)
-    - Keep under 50 words
+    - Add hiring intent where natural: hiring, job opening, careers, contract, freelance, remote, onsite, flexible — pick what matches EMPLOYMENT_TYPE and LOCATION.
+    - LinkedIn: prioritize real listings and recruiter/hiring posts; include keywords like "we are hiring" or "looking for" when OBJECTIVE is freelance_pitch or hiring managers may post in feed.
+    - If the message is about IT/software, bias toward role terms from: ${roleHint}
+    - Add these flavor keywords: ${jobHint}
+    - You MUST end your output with this exact platform clause (copy verbatim): ${platformHint}
+    - Expand tech abbreviations (React → React.js). No question marks. Under 70 words.
     
-    Example (freelance): "react work" → "React.js developer freelance remote contract"
-    Example (full-time): "react work" → "React.js Node.js full-time remote hiring fintech"
+    Example: "react work" → "React.js developer remote hiring contract ${platformHint}"
   `;
 
-  const result = await callGroq(
-    prompt,
-    systemPrompt,
-    MODELS.QUERY_ENHANCER,
-    100,
-  );
+  // ---- NEW: use Gemini with Groq/Mistral as fallback ----
+  const result = await chatWithGlobalFallback({
+    taskName: "Query enhancer (Gemini first)",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: prompt },
+    ],
+    geminiModels: ["gemini-2.5-flash"], // free & fast
+    groqModels: [MODELS.QUERY_ENHANCER], // fallback if Gemini fails
+    mistralModels: ["mistral-small-latest"],
+    temperature: 0.3,
+    maxTokens: 100,
+  });
 
-  if (!result.success) {
-    return originalMessage;
+  if (result.success) {
+    trackRequest(); // still count towards daily limit to stay safe
+    return result.content.replace(/^"|"$/g, "").trim();
   }
 
-  // Strip literal quotes that AI might hallucinate around the string
-  return result.content.replace(/^"|"$/g, "").trim();
+  console.warn("⚠️ Query enhancer failed, falling back to original message");
+  return originalMessage;
 }
 
 // ============================================
-// 3. CASUAL CHAT RESPONSE
+// 3. CASUAL CHAT (unchanged)
 // ============================================
 async function handleCasualChat(message) {
   const systemPrompt = `You are JARVIS, a friendly AI assistant for a freelance developer. Respond briefly (1-2 sentences), warmly, and be helpful.`;
@@ -253,7 +308,7 @@ async function handleCasualChat(message) {
 }
 
 // ============================================
-// 4. PROPOSAL GENERATOR
+// 4. PROPOSAL GENERATOR (unchanged)
 // ============================================
 async function generateProposalWithAI(jobDescription, userProfile) {
   const systemPrompt = `You are a professional freelance proposal writer. Return valid JSON with "subject" and "body" fields.`;
@@ -309,13 +364,12 @@ async function generateProposalWithAI(jobDescription, userProfile) {
 }
 
 // ============================================
-// 5. MCP TOOL CALLER - NOW WITH REAL IMPLEMENTATION!
+// 5. MCP TOOL CALLER (unchanged)
 // ============================================
 async function callMCPTool(toolName, params) {
   console.log(`🔧 Calling MCP Tool: ${toolName}`);
   console.log(`📦 Original params:`, params);
 
-  // CRITICAL: Remove null values
   const cleanedParams = cleanParams(params);
   console.log(`🧹 Cleaned params:`, cleanedParams);
 
@@ -332,7 +386,7 @@ async function callMCPTool(toolName, params) {
           cleanedParams.location,
           cleanedParams.radius || 2000,
           cleanedParams.type,
-          cleanedParams.keyword, // undefined is fine, null is not
+          cleanedParams.keyword,
         );
         break;
 
@@ -366,27 +420,31 @@ async function callMCPTool(toolName, params) {
 
       case "searchFreelanceJobs":
         console.log(
-          `🔎 Using Lead Pipeline. Target leads: ${cleanedParams.maxLeads || 5}`,
+          `🔎 Lead pipeline: maxLeads=${cleanedParams.maxLeads ?? DEFAULT_MAX_LEADS}, fetchLimit=${cleanedParams.fetchLimit ?? DEFAULT_LEAD_FETCH_LIMIT}`,
         );
         result = await findLeadsForProposal(cleanedParams.query, {
-          maxLeads: cleanedParams.maxLeads || 5,
+          maxLeads: cleanedParams.maxLeads ?? DEFAULT_MAX_LEADS,
+          fetchLimit: cleanedParams.fetchLimit,
           minScore: 50,
-          generateTemplates: cleanedParams.generateTemplates !== false, // Default true if they ask for template
+          generateTemplates: cleanedParams.generateTemplates !== false,
           objective: cleanedParams.objective || "freelance_pitch",
           userContext: {
             name: "Pawan Bisht",
             role: "Developer",
             pitch:
               "I am a skilled developer looking to solve your technical challenges.",
+            pipelineSettings: cleanedParams.pipelineSettings,
           },
         });
         break;
+
       case "searchGeneralJobs":
         console.log(
-          `🔎 Using General Job Pipeline. Target leads: ${cleanedParams.maxLeads || 5}`,
+          `🔎 Job pipeline: maxLeads=${cleanedParams.maxLeads ?? DEFAULT_MAX_LEADS}, fetchLimit=${cleanedParams.fetchLimit ?? DEFAULT_LEAD_FETCH_LIMIT}`,
         );
         result = await findLeadsForProposal(cleanedParams.query, {
-          maxLeads: cleanedParams.maxLeads || 5,
+          maxLeads: cleanedParams.maxLeads ?? DEFAULT_MAX_LEADS,
+          fetchLimit: cleanedParams.fetchLimit,
           minScore: 50,
           generateTemplates: cleanedParams.generateTemplates === true,
           objective: "job_hunting",
@@ -395,6 +453,7 @@ async function callMCPTool(toolName, params) {
             role: "Developer",
             pitch:
               "I am a skilled developer looking for impactful full-time opportunities.",
+            pipelineSettings: cleanedParams.pipelineSettings,
           },
         });
         break;
@@ -424,7 +483,7 @@ async function callMCPTool(toolName, params) {
 }
 
 // ============================================
-// 6. MAIN ROUTER
+// 6. MAIN ROUTER (unchanged)
 // ============================================
 export async function routeUserMessage(userMessage, userContext = {}) {
   console.log(`\n🎯 Processing: "${userMessage}"`);
@@ -439,34 +498,39 @@ export async function routeUserMessage(userMessage, userContext = {}) {
       return await handleCasualChat(userMessage);
 
     case "job_search":
-      const searchMode = inferJobSearchMode(userMessage, classification.entities);
+      const searchMode = inferJobSearchMode(
+        userMessage,
+        classification.entities,
+      );
       const targetTool =
-        searchMode === "freelance" ? "searchFreelanceJobs" : "searchGeneralJobs";
+        searchMode === "freelance"
+          ? "searchFreelanceJobs"
+          : "searchGeneralJobs";
       const enhancedQuery = await enhanceJobQuery(
         userMessage,
         classification.entities,
       );
       console.log(`🔍 Enhanced query (${searchMode}): "${enhancedQuery}"`);
-      let jobResult = await callMCPTool(targetTool, {
-        query: enhancedQuery,
-        location: classification.entities.location || "remote",
-        skills: classification.entities.skills || [],
-        maxLeads: classification.entities.maxLeads || 5,
-        generateTemplates: classification.entities.generateTemplates,
-        objective: classification.entities.objective,
-      });
+      let jobResult = await callMCPTool(
+        targetTool,
+        buildLeadPipelineToolParams(
+          classification,
+          userContext,
+          enhancedQuery,
+        ),
+      );
 
-      // Automatic Retry Strategy: If enhanced query yields 0 results, retry with original query!
-      if (!jobResult.result?.success || jobResult.result?.error === "No search results found") {
-        console.log(`⚠️ Search failed with enhanced query. Retrying with original user message...`);
-        jobResult = await callMCPTool(targetTool, {
-          query: userMessage, // pure original message
-          location: classification.entities.location || "remote",
-          skills: classification.entities.skills || [],
-          maxLeads: classification.entities.maxLeads || 5,
-          generateTemplates: classification.entities.generateTemplates,
-          objective: classification.entities.objective,
-        });
+      if (
+        !jobResult.result?.success ||
+        jobResult.result?.error === "No search results found"
+      ) {
+        console.log(
+          `⚠️ Search failed with enhanced query. Retrying with original user message...`,
+        );
+        jobResult = await callMCPTool(
+          targetTool,
+          buildLeadPipelineToolParams(classification, userContext, userMessage),
+        );
       }
 
       return jobResult;
@@ -491,7 +555,6 @@ export async function routeUserMessage(userMessage, userContext = {}) {
         classification.entities.query &&
         classification.entities.query.includes("directions")
       ) {
-        // Handle directions
         return await callMCPTool("getDirections", {
           origin: classification.entities.origin,
           destination: classification.entities.destination,
@@ -536,22 +599,31 @@ export async function routeUserMessage(userMessage, userContext = {}) {
       const results = [];
       const subIntents = classification.entities.subIntents || [];
 
-      // Fail-safe: if classifier said mixed but provided no subIntents, default it back to job_search just in case!
       if (subIntents.length === 0) {
-        console.warn("⚠️ Intent claimed 'mixed' but no subIntents found. Forcing job search.");
+        console.warn(
+          "⚠️ Intent claimed 'mixed' but no subIntents found. Forcing job search.",
+        );
         classification.intent = "job_search";
-        const fallbackEnhancedQuery = await enhanceJobQuery(userMessage, classification.entities);
-        const fallbackMode = inferJobSearchMode(userMessage, classification.entities);
+        const fallbackEnhancedQuery = await enhanceJobQuery(
+          userMessage,
+          classification.entities,
+        );
+        const fallbackMode = inferJobSearchMode(
+          userMessage,
+          classification.entities,
+        );
         const fallbackTool =
-          fallbackMode === "freelance" ? "searchFreelanceJobs" : "searchGeneralJobs";
-        return await callMCPTool(fallbackTool, {
-          query: fallbackEnhancedQuery,
-          location: classification.entities.location || "remote",
-          skills: classification.entities.skills || [],
-          maxLeads: classification.entities.maxLeads || 5,
-          generateTemplates: classification.entities.generateTemplates,
-          objective: classification.entities.objective,
-        });
+          fallbackMode === "freelance"
+            ? "searchFreelanceJobs"
+            : "searchGeneralJobs";
+        return await callMCPTool(
+          fallbackTool,
+          buildLeadPipelineToolParams(
+            classification,
+            userContext,
+            fallbackEnhancedQuery,
+          ),
+        );
       }
 
       for (const subIntent of subIntents) {
@@ -566,7 +638,7 @@ export async function routeUserMessage(userMessage, userContext = {}) {
 }
 
 // ============================================
-// STATUS CHECK
+// STATUS CHECK (unchanged)
 // ============================================
 export function getStatus() {
   return {

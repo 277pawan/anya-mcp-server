@@ -22,6 +22,7 @@ export const CONFIG = {
   GROQ_API_KEY: process.env.GROQ_API_KEY,
   MISTRAL_API_KEY: process.env.MISTRAL_API_KEY,
   DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY,
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
 
   // App Config

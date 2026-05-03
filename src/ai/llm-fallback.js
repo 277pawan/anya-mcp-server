@@ -1,7 +1,10 @@
+// llm-fallback.js
 import { CONFIG } from "../config/config.js";
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions";
+const GEMINI_API_URL =
+  "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 
 function parseRetryDelayMs(errorData) {
   const message = errorData?.error?.message || "";
@@ -70,10 +73,24 @@ export async function chatWithGlobalFallback({
   responseFormat,
   groqModels = [],
   mistralModels = ["mistral-small-latest"],
+  geminiModels = [], // NEW
   groqApiKey = process.env.GROQ_API_KEY || CONFIG.GROQ_API_KEY,
   mistralApiKey = process.env.MISTRAL_API_KEY || CONFIG.MISTRAL_API_KEY,
+  geminiApiKey = process.env.GEMINI_API_KEY || CONFIG.GEMINI_API_KEY, // NEW
 }) {
   const candidates = [];
+
+  // Add Gemini candidates first → they will be tried first
+  if (geminiApiKey && geminiModels.length) {
+    for (const model of geminiModels) {
+      candidates.push({
+        provider: "gemini",
+        apiUrl: GEMINI_API_URL,
+        apiKey: geminiApiKey,
+        model,
+      });
+    }
+  }
 
   if (groqApiKey && groqModels.length) {
     for (const model of groqModels) {
@@ -100,7 +117,8 @@ export async function chatWithGlobalFallback({
   if (!candidates.length) {
     return {
       success: false,
-      error: "No AI provider key available (GROQ_API_KEY or MISTRAL_API_KEY)",
+      error:
+        "No AI provider key available (GEMINI_API_KEY, GROQ_API_KEY or MISTRAL_API_KEY)",
     };
   }
 
@@ -129,7 +147,8 @@ export async function chatWithGlobalFallback({
 
     const status = result.status;
     const errorData = result.data || {};
-    lastError = errorData?.error?.message || `${candidate.provider} API ${status}`;
+    lastError =
+      errorData?.error?.message || `${candidate.provider} API ${status}`;
     const errorCode = errorData?.error?.code || "unknown_error";
 
     if (shouldRetry(status, errorData)) {

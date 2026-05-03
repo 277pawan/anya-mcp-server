@@ -93,9 +93,7 @@ async function testLeadPipeline() {
   console.log("\n" + "=".repeat(60));
   console.log("🕵️  TEST 6: Lead Pipeline Check (Via AI Router)\n");
 
-  const query =
-    "Find me 2 remote freelancing job for me  i know react and node js and i want to work in fintech industry and i want to earn more than 100 dollars per day and also find me the contact details of the person who posted the job";
-
+  const query = "search freelancing jobs for me in web development ";
   console.log(`🔎 Simulating user chat message: "${query}"`);
 
   // Testing the integration using natural language routed through Groq intent parser
@@ -110,8 +108,8 @@ async function main() {
   try {
     // await initAllMCPServers();
     // await testMCPServers();
-    await testAIRouter();
-    // await testLeadPipeline();
+    // await testAIRouter();
+    await testLeadPipeline();
 
     process.on("SIGINT", async () => {
       console.log("\n\n🛑 Shutting down...");

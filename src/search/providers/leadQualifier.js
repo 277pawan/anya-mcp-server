@@ -27,6 +27,9 @@ Rules:
 3. Filter out anything below ${minRelevanceScore}
 4. Extract key information: name, title, company, possible email patterns, social profiles
 5. Provide reasoning for high-quality leads (score > 80)
+6. Reject or score very low: generic job-board homepages, category hubs (e.g. "Jobs on LinkedIn", "Fiverr categories", ZipRecruiter sitemaps) unless the snippet shows one concrete role and employer
+7. Prefer a specific hiring company or contact over the marketplace brand (not "LinkedIn" / "Indeed" as company unless it is truly LinkedIn corporate hiring)
+8. For LinkedIn, favor individual job posts or clear hiring signals over navigational pages
 
 Output format:
 {
@@ -63,7 +66,7 @@ Query Context: ${queryContext}
 Scraped Data (Truncated for context limit):
 ${JSON.stringify(truncatedData, null, 2)}
 
-Identify relevant leads that match: ${queryContext}
+Identify employers or contacts actively hiring or buying services for this query. Skip platform landing pages and pure directories.
 
 Return ONLY valid JSON matching the specified format.`;
 

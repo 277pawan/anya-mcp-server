@@ -4,15 +4,46 @@ import { qualifyLeads } from "./providers/leadQualifier.js";
 import { enrichBatchLeads } from "./providers/prospeo.js";
 import { findEmailWithHunter } from "./providers/hunter.js";
 import { generateProposal } from "./providers/proposalGenerator.js";
+import {
+  DEFAULT_LEAD_FETCH_LIMIT,
+  DEFAULT_MAX_LEADS,
+} from "./leadPipelineDefaults.js";
+
+export { DEFAULT_LEAD_FETCH_LIMIT, DEFAULT_MAX_LEADS } from "./leadPipelineDefaults.js";
+
+function positiveInt(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+/** LinkedIn URLs first, then the rest; de-dupe by URL. */
+function mergePrioritizeLinkedIn(linkedinResults, generalResults) {
+  const seen = new Set();
+  const out = [];
+  for (const r of linkedinResults || []) {
+    if (!r?.url || seen.has(r.url)) continue;
+    seen.add(r.url);
+    out.push(r);
+  }
+  for (const r of generalResults || []) {
+    if (!r?.url || seen.has(r.url)) continue;
+    seen.add(r.url);
+    out.push(r);
+  }
+  return out;
+}
 
 export async function findLeadsForProposal(targetQuery, options = {}) {
   const {
     searchType = "semantic",
-    maxLeads = 10,
+    maxLeads = DEFAULT_MAX_LEADS,
     minScore = 70,
     includeContactInfo = true,
     generateTemplates = false, // Automatically create email templates
     objective = "freelance_pitch",
+    fetchLimit: fetchLimitOption,
+    scrapeTimeoutMs = positiveInt(process.env.LEAD_SCRAPE_TIMEOUT_MS, 25000),
+    linkedInBoost: linkedInBoostOption,
     userContext = {
       name: "Your Name",
       role: "Developer",
@@ -20,16 +51,56 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
     },
   } = options;
 
-  console.log(`🔍 Searching for: ${targetQuery}`);
+  const settings = userContext.pipelineSettings || {};
+  const effectiveFetchLimit = positiveInt(
+    fetchLimitOption ?? settings.fetchLimit,
+    DEFAULT_LEAD_FETCH_LIMIT,
+  );
+  const effectiveScrapeTimeout = positiveInt(scrapeTimeoutMs, 25000);
+  const linkedInBoost =
+    linkedInBoostOption ??
+    (process.env.LEAD_LINKEDIN_BOOST !== "0" &&
+      (objective === "job_hunting" || objective === "freelance_pitch"));
+
+  console.log(
+    `🔍 Searching for: ${targetQuery} (URLs to fetch & scrape: ${effectiveFetchLimit})`,
+  );
 
   // Step 1: Search for relevant content
-  const searchResults = await searchWeb(targetQuery, searchType, { limit: 20 });
+  const searchResults = await searchWeb(targetQuery, searchType, {
+    limit: effectiveFetchLimit,
+  });
 
   if (!searchResults.success || !searchResults.results?.length) {
     return { success: false, error: "No search results found" };
   }
 
-  console.log(`📄 Found ${searchResults.results.length} potential sources`);
+  let resultsToScrape = searchResults.results;
+
+  if (linkedInBoost) {
+    const liQuery = `site:linkedin.com/jobs ${targetQuery}`;
+    const liSearch = await searchWeb(liQuery, searchType, {
+      limit: effectiveFetchLimit,
+    });
+    if (liSearch.success && liSearch.results?.length) {
+      resultsToScrape = mergePrioritizeLinkedIn(
+        liSearch.results,
+        searchResults.results,
+      );
+      console.log(
+        `📌 LinkedIn jobs boost: ${liSearch.results.length} job-SERP hits merged → ${resultsToScrape.length} unique URLs (LinkedIn first)`,
+      );
+    }
+  }
+
+  const totalFromSearch = resultsToScrape.length;
+  console.log(`📄 Found ${totalFromSearch} potential sources to consider`);
+
+  if (totalFromSearch > effectiveFetchLimit) {
+    console.log(
+      `📎 Scraping first ${effectiveFetchLimit} of ${totalFromSearch} merged URLs (raise pipeline fetchLimit in settings / options)`,
+    );
+  }
 
   // Step 2: Scrape the top results (with strict timeout to prevent hanging)
   const scrapedData = [];
@@ -44,14 +115,17 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
     ]);
   };
 
-  for (let i = 0; i < Math.min(searchResults.results.length, 10); i++) {
-    const result = searchResults.results[i];
+  const scrapeCap = Math.min(resultsToScrape.length, effectiveFetchLimit);
+  for (let i = 0; i < scrapeCap; i++) {
+    const result = resultsToScrape[i];
     try {
       console.log(
-        `   [${i + 1}/10] 🌐 Scraping: ${result.url.substring(0, 50)}...`,
+        `   [${i + 1}/${scrapeCap}] 🌐 Scraping: ${result.url.substring(0, 50)}...`,
       );
-      // Force 8 second timeout per scrape
-      const scraped = await withTimeout(scrapeUrl(result.url), 8000);
+      const scraped = await withTimeout(
+        scrapeUrl(result.url),
+        effectiveScrapeTimeout,
+      );
 
       if (scraped && scraped.success) {
         scrapedData.push({

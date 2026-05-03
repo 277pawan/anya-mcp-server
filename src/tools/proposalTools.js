@@ -1,5 +1,9 @@
 // src/tools/proposalTools.js
 import { findLeadsForProposal } from "../search/leadPipeline.js";
+import {
+  DEFAULT_LEAD_FETCH_LIMIT,
+  DEFAULT_MAX_LEADS,
+} from "../search/leadPipelineDefaults.js";
 import { chatWithGlobalFallback } from "../ai/llm-fallback.js";
 
 server.tool(
@@ -11,13 +15,26 @@ server.tool(
       .describe(
         "What you're looking for e.g., 'companies hiring MERN stack developers'",
       ),
-    maxLeads: z.number().optional().default(10),
+    maxLeads: z.number().optional().default(DEFAULT_MAX_LEADS),
+    fetchLimit: z
+      .number()
+      .optional()
+      .describe(
+        `How many URLs to search and scrape (default ${DEFAULT_LEAD_FETCH_LIMIT}; later from user settings DB)`,
+      ),
     minRelevanceScore: z.number().optional().default(70),
     includeContactInfo: z.boolean().optional().default(true),
   },
-  async ({ targetQuery, maxLeads, minRelevanceScore, includeContactInfo }) => {
+  async ({
+    targetQuery,
+    maxLeads,
+    fetchLimit,
+    minRelevanceScore,
+    includeContactInfo,
+  }) => {
     const result = await findLeadsForProposal(targetQuery, {
       maxLeads,
+      fetchLimit,
       minScore: minRelevanceScore,
       includeContactInfo,
     });
