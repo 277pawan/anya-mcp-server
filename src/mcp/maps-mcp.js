@@ -9,22 +9,22 @@ const server = new McpServer({
   version: "1.0.0",
 });
 
-// New base URL for Geoapify
-const BASEURL = "https://api.geoapify.com/v1";
+// ─── Base URLs ────────────────────────────────────────────────────────────────
+// IMPORTANT: Geoapify has TWO versioned base paths:
+const BASEURLV1 = "https://api.geoapify.com/v1";
+const BASEURLV2 = "https://api.geoapify.com/v2";
 
-async function fetchGeoapify(endpoint, params) {
-  // Geoapify expects the API key as a query parameter named 'apiKey'
-  params.apiKey = CONFIG.GEOAPIFY_API_KEY;
-
-  const url = new URL(`${BASEURL}/${endpoint}`);
-  Object.entries(params).forEach(([key, value]) =>
+// ─── Generic fetch helper ─────────────────────────────────────────────────────
+async function fetchGeoapify(baseUrl, endpoint, params) {
+  const urlParams = { ...params, apiKey: CONFIG.GEOAPIFY_API_KEY };
+  const url = new URL(`${baseUrl}/${endpoint}`);
+  Object.entries(urlParams).forEach(([key, value]) =>
     url.searchParams.set(key, value),
   );
 
   const res = await fetch(url.toString());
   const data = await res.json();
 
-  // Geoapify's status/error handling might differ slightly, but checking for features/properties is a good start
   if (res.ok && data) {
     return data;
   }
@@ -33,14 +33,19 @@ async function fetchGeoapify(endpoint, params) {
   );
 }
 
+// ─── 1. geocodeAddress ────────────────────────────────────────────────────────
+// Endpoint: GET /v1/geocode/search?text=...
+// Returns GeoJSON FeatureCollection; coordinates are [lon, lat].
 server.tool(
   "geocodeAddress",
   {
     address: z.string().describe("Address to convert to coordinates"),
   },
   async ({ address }) => {
-    // Geoapify 'search' endpoint for forward geocoding
-    const data = await fetchGeoapify("geocode/search", { text: address });
+    const data = await fetchGeoapify(BASEURLV1, "geocode/search", {
+      text: address,
+      limit: 1,
+    });
     const result = data.features?.[0];
 
     if (!result) {
@@ -56,6 +61,7 @@ server.tool(
           text: JSON.stringify(
             {
               formatted_address: result.properties.formatted,
+              // coordinates array is [lon, lat] — swap to expose lat/lon clearly
               lat: result.geometry.coordinates[1],
               lng: result.geometry.coordinates[0],
               place_id: result.properties.place_id,
@@ -69,6 +75,8 @@ server.tool(
   },
 );
 
+// ─── 2. reverseGeocode ───────────────────────────────────────────────────────
+// Endpoint: GET /v1/geocode/reverse?lat=...&lon=...
 server.tool(
   "reverseGeocode",
   {
@@ -76,8 +84,10 @@ server.tool(
     lng: z.number().describe("Longitude"),
   },
   async ({ lat, lng }) => {
-    // Geoapify 'reverse' endpoint
-    const data = await fetchGeoapify("geocode/reverse", { lat: lat, lon: lng });
+    const data = await fetchGeoapify(BASEURLV1, "geocode/reverse", {
+      lat,
+      lon: lng, // Geoapify uses "lon", not "lng"
+    });
     const result = data.features?.[0];
 
     if (!result) {
@@ -106,6 +116,10 @@ server.tool(
   },
 );
 
+// ─── 3. searchNearbyPlaces ───────────────────────────────────────────────────
+// FIX 1: Places API is v2, not v1 → use BASEURLV2 + "places"
+// FIX 2: Circle filter format is "circle:lon,lat,radius" (lon FIRST, then lat)
+// FIX 3: `name` param does exact name matching — used correctly for keyword
 server.tool(
   "searchNearbyPlaces",
   {
@@ -114,87 +128,122 @@ server.tool(
     type: z
       .string()
       .optional()
-      .describe("Place type e.g. restaurant, hospital, school"),
-    keyword: z.string().optional().describe("Keyword to filter results"),
+      .describe(
+        "Geoapify place category e.g. catering.restaurant, healthcare.hospital, education.school",
+      ),
+    keyword: z
+      .string()
+      .optional()
+      .describe("Keyword to filter results by name"),
   },
   async ({ location, radius, type, keyword }) => {
-    // First, geocode the location string to get coordinates
-    const geoData = await fetchGeoapify("geocode/search", { text: location });
+    // Step 1: geocode the location string to get a lat/lon centre point
+    const geoData = await fetchGeoapify(BASEURLV1, "geocode/search", {
+      text: location,
+      limit: 1,
+    });
     const geoResult = geoData.features?.[0];
     if (!geoResult) throw new Error("Location could not be geocoded.");
-    const [lng, lat] = geoResult.geometry.coordinates;
 
-    // 'places' endpoint
+    // Geoapify GeoJSON coordinates are [lon, lat]
+    const [lon, lat] = geoResult.geometry.coordinates;
+
     const params = {
-      categories: type || "catering", // 'catering' is a common fallback for 'restaurant' in OSM categories
-      filter: `circle:${lng},${lat},${radius}`,
-      bias: `proximity:${lng},${lat}`,
+      // FIX: circle filter is "circle:lon,lat,radius" — lon comes first
+      filter: `circle:${lon},${lat},${radius}`,
+      bias: `proximity:${lon},${lat}`,
+      categories: type || "catering.restaurant",
       limit: 10,
     };
-    if (keyword) params.name = keyword; // Geoapify uses 'name' for keyword filtering
+    if (keyword) params.name = keyword;
 
-    const data = await fetchGeoapify("places", params);
+    // FIX: Places API lives at v2/places
+    const data = await fetchGeoapify(BASEURLV2, "places", params);
 
     const places =
       data.features?.map((place) => ({
         name: place.properties.name,
         address: place.properties.formatted || place.properties.address_line1,
-        rating: place.properties.rank?.confidence, // Rating system is different; confidence is a good proxy
-        total_ratings: place.properties.datasource?.raw?.osm_id, // Not directly available
-        open_now: place.properties.opening_hours, // May be a string, not a simple boolean
+        categories: place.properties.categories,
+        open_now: place.properties.opening_hours ?? null,
         place_id: place.properties.place_id,
       })) || [];
 
     return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(places, null, 2),
-        },
-      ],
+      content: [{ type: "text", text: JSON.stringify(places, null, 2) }],
     };
   },
 );
 
+// ─── 4. getPlaceDetails ──────────────────────────────────────────────────────
+// FIX: Place Details API is at v2/place-details?id=PLACE_ID
+//      NOT v1/places/PLACE_ID — that route does not exist and always 400s.
 server.tool(
   "getPlaceDetails",
   {
     place_id: z.string().describe("Geoapify Place ID"),
   },
   async ({ place_id }) => {
-    // Geoapify 'place details' endpoint
-    const data = await fetchGeoapify(`places/${place_id}`, {});
+    // Correct endpoint: GET /v2/place-details?id=PLACE_ID
+    const data = await fetchGeoapify(BASEURLV2, "place-details", {
+      id: place_id,
+    });
     const result = data.features?.[0];
+
+    if (!result) {
+      return {
+        content: [
+          { type: "text", text: "No details found for this place ID." },
+        ],
+      };
+    }
 
     return {
       content: [
         {
           type: "text",
-          text: JSON.stringify(result?.properties || {}, null, 2),
+          text: JSON.stringify(result.properties || {}, null, 2),
         },
       ],
     };
   },
 );
 
+// ─── 5. getDirections ───────────────────────────────────────────────────────
+// FIX 1: Waypoints format must be "lat,lon|lat,lon" (lat first) in default mode,
+//         OR "lonlat:lon,lat|lonlat:lon,lat". The old code sent "lon,lat|lon,lat"
+//         which is wrong for the default format and gives incorrect routes / 400s.
+// FIX 2: Response structure depends on format param:
+//         - GeoJSON (default, no format param): data.features[0].properties.legs
+//         - JSON (format=json):                 data.results[0].legs
+//         The old code passed format=json but parsed data.features — pick one and
+//         be consistent. We use the lonlat: prefix format + GeoJSON (default) here
+//         so we can drop the format param entirely and parse features correctly.
+// FIX 3: "transit" is not a valid Geoapify mode — removed from enum.
+//         Valid modes: drive, walk, bicycle, bus, scooter, motorcycle, hike, etc.
 server.tool(
   "getDirections",
   {
     origin: z.string().describe("Starting location"),
     destination: z.string().describe("Destination location"),
     mode: z
-      .enum(["drive", "walk", "bicycle", "transit"]) // Geoapify modes
+      .enum(["drive", "walk", "bicycle", "bus", "scooter", "hike"])
       .default("drive")
       .describe("Travel mode"),
   },
   async ({ origin, destination, mode }) => {
-    // First, geocode both origin and destination
-    const originData = await fetchGeoapify("geocode/search", { text: origin });
-    const destData = await fetchGeoapify("geocode/search", {
-      text: destination,
-    });
-    const originCoords = originData.features?.[0]?.geometry.coordinates;
-    const destCoords = destData.features?.[0]?.geometry.coordinates;
+    // Geocode both locations
+    const [originData, destData] = await Promise.all([
+      fetchGeoapify(BASEURLV1, "geocode/search", { text: origin, limit: 1 }),
+      fetchGeoapify(BASEURLV1, "geocode/search", {
+        text: destination,
+        limit: 1,
+      }),
+    ]);
+
+    const originCoords = originData.features?.[0]?.geometry.coordinates; // [lon, lat]
+    const destCoords = destData.features?.[0]?.geometry.coordinates; // [lon, lat]
+
     if (!originCoords || !destCoords) {
       return {
         content: [
@@ -203,12 +252,13 @@ server.tool(
       };
     }
 
-    // 'routing' endpoint requires waypoints in the format "lon,lat|lon,lat"
-    const waypoints = `${originCoords[0]},${originCoords[1]}|${destCoords[0]},${destCoords[1]}`;
-    const data = await fetchGeoapify("routing", {
-      waypoints: waypoints,
-      mode: mode,
-      format: "json",
+    // FIX: Use "lonlat:lon,lat" prefix format so order is unambiguous
+    const waypoints = `lonlat:${originCoords[0]},${originCoords[1]}|lonlat:${destCoords[0]},${destCoords[1]}`;
+
+    // No format param → GeoJSON response → parse via data.features
+    const data = await fetchGeoapify(BASEURLV1, "routing", {
+      waypoints,
+      mode,
     });
 
     if (!data.features?.length) {
@@ -217,8 +267,8 @@ server.tool(
       };
     }
 
-    const route = data.features[0];
-    const leg = route.properties.legs?.[0];
+    // GeoJSON response structure: features[0].properties.legs[0]
+    const leg = data.features[0].properties.legs?.[0];
 
     return {
       content: [
@@ -228,7 +278,10 @@ server.tool(
             {
               distance: `${(leg.distance / 1000).toFixed(1)} km`,
               duration: `${Math.round(leg.time / 60)} mins`,
-              steps: leg.steps?.map((step) => step.instruction.text) || [],
+              steps:
+                leg.steps
+                  ?.map((step) => step.instruction?.text)
+                  .filter(Boolean) || [],
             },
             null,
             2,
@@ -239,23 +292,55 @@ server.tool(
   },
 );
 
+// ─── 6. searchPlaces ────────────────────────────────────────────────────────
+// FIX 1: Places API is v2, not v1.
+// FIX 2: Geocoding a compound query like "pizza near Delhi" may return a pizza
+//         shop, not a city centre. Extract the city component from the geocoding
+//         result's properties to get a proper area anchor, then fall back to the
+//         raw coordinates if the city can't be resolved.
+// FIX 3: Circle filter lon/lat order corrected.
 server.tool(
   "searchPlaces",
   {
     query: z.string().describe("Text search query e.g. 'pizza near Delhi'"),
   },
   async ({ query }) => {
-    // For a text search, we first geocode the query to get coordinates, then search nearby.
-    // This is a simplified approach; a dedicated text search is often part of 'places' with bias.
-    const geoData = await fetchGeoapify("geocode/search", { text: query });
+    // Step 1: geocode the whole query to get a rough coordinate + city info
+    const geoData = await fetchGeoapify(BASEURLV1, "geocode/search", {
+      text: query,
+      limit: 1,
+    });
     const geoResult = geoData.features?.[0];
-    if (!geoResult) throw new Error("Location could not be geocoded.");
-    const [lng, lat] = geoResult.geometry.coordinates;
+    if (!geoResult) throw new Error("Could not resolve location from query.");
 
-    const data = await fetchGeoapify("places", {
+    // Step 2: use the city/state from the result to get a proper area centre
+    const cityName =
+      geoResult.properties.city ||
+      geoResult.properties.county ||
+      geoResult.properties.state;
+
+    let centerLon, centerLat;
+
+    if (cityName) {
+      const cityData = await fetchGeoapify(BASEURLV1, "geocode/search", {
+        text: cityName,
+        limit: 1,
+      });
+      const cityResult = cityData.features?.[0];
+      if (cityResult) {
+        [centerLon, centerLat] = cityResult.geometry.coordinates;
+      }
+    }
+
+    // Fall back to raw query coordinates if city geocoding failed
+    if (!centerLon || !centerLat) {
+      [centerLon, centerLat] = geoResult.geometry.coordinates;
+    }
+
+    const data = await fetchGeoapify(BASEURLV2, "places", {
       categories: "catering,commercial",
-      filter: `circle:${lng},${lat},2000`,
-      bias: `proximity:${lng},${lat}`,
+      filter: `circle:${centerLon},${centerLat},5000`,
+      bias: `proximity:${centerLon},${centerLat}`,
       limit: 10,
     });
 
@@ -263,21 +348,17 @@ server.tool(
       data.features?.map((place) => ({
         name: place.properties.name,
         address: place.properties.formatted,
-        rating: place.properties.rank?.confidence,
+        categories: place.properties.categories,
         place_id: place.properties.place_id,
       })) || [];
 
     return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(places, null, 2),
-        },
-      ],
+      content: [{ type: "text", text: JSON.stringify(places, null, 2) }],
     };
   },
 );
 
+// ─── Start server ─────────────────────────────────────────────────────────────
 async function init() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
