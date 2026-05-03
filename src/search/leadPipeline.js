@@ -16,7 +16,6 @@ function positiveInt(value, fallback) {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
-/** LinkedIn URLs first, then the rest; de-dupe by URL. */
 function mergePrioritizeLinkedIn(linkedinResults, generalResults) {
   const seen = new Set();
   const out = [];
@@ -39,7 +38,7 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
     maxLeads = DEFAULT_MAX_LEADS,
     minScore = 70,
     includeContactInfo = true,
-    generateTemplates = false, // Automatically create email templates
+    generateTemplates = false,
     objective = "freelance_pitch",
     fetchLimit: fetchLimitOption,
     scrapeTimeoutMs = positiveInt(process.env.LEAD_SCRAPE_TIMEOUT_MS, 25000),
@@ -66,7 +65,6 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
     `🔍 Searching for: ${targetQuery} (URLs to fetch & scrape: ${effectiveFetchLimit})`,
   );
 
-  // Step 1: Search for relevant content
   const searchResults = await searchWeb(targetQuery, searchType, {
     limit: effectiveFetchLimit,
   });
@@ -78,7 +76,10 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
   let resultsToScrape = searchResults.results;
 
   if (linkedInBoost) {
-    const liQuery = `site:linkedin.com/jobs ${targetQuery}`;
+    // Search both jobs and user posts (e.g., "I am hiring a web developer")
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().toLocaleString('default', { month: 'long' });
+    const liQuery = `(site:linkedin.com/jobs OR site:linkedin.com/posts) ${targetQuery} "hiring" OR "looking for" "${currentMonth} ${currentYear}"`;
     const liSearch = await searchWeb(liQuery, searchType, {
       limit: effectiveFetchLimit,
     });
@@ -98,14 +99,12 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
 
   if (totalFromSearch > effectiveFetchLimit) {
     console.log(
-      `📎 Scraping first ${effectiveFetchLimit} of ${totalFromSearch} merged URLs (raise pipeline fetchLimit in settings / options)`,
+      `📎 Scraping first ${effectiveFetchLimit} of ${totalFromSearch} merged URLs (raise fetchLimit in settings / options for more)`,
     );
   }
 
-  // Step 2: Scrape the top results (with strict timeout to prevent hanging)
   const scrapedData = [];
 
-  // Helper for timeout
   const withTimeout = (promise, ms) => {
     return Promise.race([
       promise,
@@ -141,11 +140,9 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
       );
     }
 
-    // Small delay to be polite
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
 
-  // Step 3: AI qualification
   console.log(`🤖 AI qualifying ${scrapedData.length} sources...`);
   const qualified = await qualifyLeads(
     scrapedData,
@@ -167,15 +164,21 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
 
   console.log(`✅ Found ${qualified.qualifiedLeads.length} qualified leads`);
 
-  // Step 4: Enrich with contact info
   let leads = qualified.qualifiedLeads;
 
   if (includeContactInfo) {
-    console.log(`📧 Finding contact information...`);
+    const hasHunter = !!process.env.HUNTER_API_KEY;
+    const hasExa = !!process.env.EXA_API_KEY;
+    console.log(
+      `📧 Finding contact information for ${leads.length} lead(s) (Hunter: ${hasHunter ? "on" : "off"}, Exa: ${hasExa ? "on" : "off"})...`,
+    );
 
-    // Try to find emails using multiple methods
+    let li = 0;
     for (const lead of leads) {
-      // Try Hunter first
+      li++;
+      const label = lead.company || lead.name || "unknown";
+      console.log(`   [${li}/${leads.length}] ${label}`);
+
       if (lead.company && process.env.HUNTER_API_KEY) {
         const hunterResult = await findEmailWithHunter(
           lead.company,
@@ -186,21 +189,31 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
         if (hunterResult.success && hunterResult.emails?.length) {
           lead.foundEmails = hunterResult.emails;
           lead.emailSource = "hunter";
+          console.log(
+            `      ✉️ Hunter: ${hunterResult.emails.length} email(s)`,
+          );
+        } else {
+          console.log(`      ✉️ Hunter: none`);
         }
       }
 
-      // Try Exa as backup
       if (!lead.foundEmails?.length && process.env.EXA_API_KEY) {
         const exaQuery = `${lead.name} ${lead.company} email address`;
         const exaResult = await searchWeb(exaQuery, "semantic", { limit: 3 });
         if (exaResult.success) {
           lead.foundEmails = extractEmailsFromResults(exaResult.results);
           lead.emailSource = "exa";
+          console.log(
+            `      ✉️ Exa: ${lead.foundEmails?.length || 0} email(s) from snippets`,
+          );
         }
+      }
+
+      if (!lead.foundEmails?.length) {
+        console.log(`      ✉️ No email found (add HUNTER_API_KEY / EXA_API_KEY)`);
       }
     }
 
-    // Optional: Prospeo enrichment for high-value leads
     if (process.env.PROSPEO_API_KEY) {
       const highValueLeads = leads.filter((l) => l.relevanceScore > 85);
       const enriched = await enrichBatchLeads(
@@ -208,7 +221,6 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
         process.env.PROSPEO_API_KEY,
       );
 
-      // Merge enriched data
       for (const enrichedLead of enriched) {
         const index = leads.findIndex((l) => l.name === enrichedLead.name);
         if (index !== -1) {
@@ -218,7 +230,6 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
     }
   }
 
-  // Step 4.5: Generate proposals for top leads if requested
   if (generateTemplates) {
     console.log(`✍️ Generating personalized email templates...`);
     for (const lead of leads) {
@@ -232,7 +243,6 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
     }
   }
 
-  // Step 5: Generate proposal-ready output
   const finalLeads = leads.slice(0, maxLeads).map((lead) => ({
     name: lead.name,
     title: lead.title,

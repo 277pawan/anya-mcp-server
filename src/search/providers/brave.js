@@ -9,11 +9,13 @@ export async function searchWithBrave(query, apiKey, options = {}) {
 
   const raw = Number(options.limit ?? options.count);
   const count = Number.isFinite(raw) && raw > 0 ? Math.min(Math.floor(raw), 20) : 10;
+  
+  let searchUrl = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`;
+  if (options.recent !== false) {
+    searchUrl += `&freshness=pm`; // past month
+  }
 
-  const response = await fetch(
-    `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`,
-    { headers: { "X-Subscription-Token": apiKey } },
-  );
+  const response = await fetch(searchUrl, { headers: { "X-Subscription-Token": apiKey } });
 
   braveMonthly++;
   return await response.json();

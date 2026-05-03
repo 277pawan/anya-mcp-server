@@ -17,6 +17,7 @@ import {
 import { findLeadsForProposal } from "./src/search/leadPipeline.js";
 
 dotenv.config({ quiet: true });
+console.log(process.env.GEMINI_API_KEY);
 
 /**
  * Test 2: Test Calendar MCP directly
@@ -109,7 +110,7 @@ async function main() {
     // await initAllMCPServers();
     // await testMCPServers();
     // await testAIRouter();
-    await testLeadPipeline();
+    // await testLeadPipeline();
 
     process.on("SIGINT", async () => {
       console.log("\n\n🛑 Shutting down...");

@@ -65,6 +65,8 @@ async function callOpenAICompatibleChat({
   };
 }
 
+const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+
 export async function chatWithGlobalFallback({
   messages,
   taskName = "LLM task",
@@ -73,14 +75,28 @@ export async function chatWithGlobalFallback({
   responseFormat,
   groqModels = [],
   mistralModels = ["mistral-small-latest"],
-  geminiModels = [], // NEW
+  geminiModels = [],
+  openrouterModels = [], // NEW
   groqApiKey = process.env.GROQ_API_KEY || CONFIG.GROQ_API_KEY,
   mistralApiKey = process.env.MISTRAL_API_KEY || CONFIG.MISTRAL_API_KEY,
-  geminiApiKey = process.env.GEMINI_API_KEY || CONFIG.GEMINI_API_KEY, // NEW
+  geminiApiKey = process.env.GEMINI_API_KEY || CONFIG.GEMINI_API_KEY,
+  openrouterApiKey = process.env.OPENROUTER_API_KEY || CONFIG.OPENROUTER_API_KEY, // NEW
 }) {
   const candidates = [];
 
-  // Add Gemini candidates first → they will be tried first
+  // Add OpenRouter candidates first if provided (for free models)
+  if (openrouterApiKey && openrouterModels.length) {
+    for (const model of openrouterModels) {
+      candidates.push({
+        provider: "openrouter",
+        apiUrl: OPENROUTER_API_URL,
+        apiKey: openrouterApiKey,
+        model,
+      });
+    }
+  }
+
+  // Add Gemini candidates
   if (geminiApiKey && geminiModels.length) {
     for (const model of geminiModels) {
       candidates.push({
@@ -105,11 +121,14 @@ export async function chatWithGlobalFallback({
 
   if (mistralApiKey && mistralModels.length) {
     for (const model of mistralModels) {
+      // Check if the key is actually an openrouter key (sk-or-v1) and reroute
+      const apiUrl = mistralApiKey.startsWith("sk-or-v1") ? OPENROUTER_API_URL : MISTRAL_API_URL;
+      const actualModel = mistralApiKey.startsWith("sk-or-v1") && !model.includes("/") ? `mistralai/${model}` : model;
       candidates.push({
-        provider: "mistral",
-        apiUrl: MISTRAL_API_URL,
+        provider: mistralApiKey.startsWith("sk-or-v1") ? "openrouter" : "mistral",
+        apiUrl,
         apiKey: mistralApiKey,
-        model,
+        model: actualModel,
       });
     }
   }

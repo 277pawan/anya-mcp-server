@@ -57,14 +57,30 @@ const MODELS = {
 };
 
 function inferJobSearchMode(userMessage, entities = {}) {
-  const objective = entities.objective || "";
-  const employmentType = entities.employmentType || "";
-  const text = `${userMessage} ${employmentType} ${objective}`.toLowerCase();
+  const msg = userMessage.toLowerCase();
+  const employmentType = String(entities.employmentType || "").toLowerCase();
+  const objective = String(entities.objective || "").toLowerCase();
 
+  const wantsFreelance =
+    /freelanc|contractor|\bupwork\b|\bgig\b|client work|project[-\s]based/.test(
+      msg,
+    ) ||
+    employmentType === "freelance" ||
+    employmentType === "contract" ||
+    objective === "freelance_pitch";
+
+  const rejectsFreelance =
+    /only full[-\s]?time|full[-\s]?time only|permanent (job|role)|not (interested in )?freelanc|no contract/.test(
+      msg,
+    );
+
+  if (wantsFreelance && !rejectsFreelance) return "freelance";
+
+  const text = `${userMessage} ${employmentType} ${objective}`.toLowerCase();
   const freelanceSignals =
-    /freelance|contract|gig|client|upwork|toptal|proposal|b2b_sales/.test(text);
+    /freelance|contract|gig|upwork|toptal|proposal|b2b_sales/.test(text);
   const fulltimeSignals =
-    /full[-\s]?time|mnc|company|corporate|permanent|salary|employment|job_hunting|software\s*engineer|software\s*developer|full[-\s]?stack|backend|frontend|sde/.test(
+    /full[-\s]?time|mnc|corporate|permanent|salary|\bemployment\b|software\s*engineer|software\s*developer|full[-\s]?stack|backend|frontend|sde/.test(
       text,
     );
 
@@ -72,6 +88,15 @@ function inferJobSearchMode(userMessage, entities = {}) {
   if (fulltimeSignals && !freelanceSignals) return "general";
 
   return "general";
+}
+
+/** Appends site: clause if the model dropped it (Exa/Brave need this for job boards). */
+function ensureJobSearchPlatformClause(query, platformHint) {
+  const hint = platformHint.trim();
+  if (!hint) return query.trim();
+  const q = query.trim();
+  if (q.includes(hint)) return q;
+  return `${q} ${hint}`.trim();
 }
 
 // ============================================
@@ -231,41 +256,49 @@ async function classifyIntent(message) {
 // ============================================
 // 2. QUERY ENHANCER – *UPDATED* WITH GEMINI FIRST
 // ============================================
-async function enhanceJobQuery(originalMessage, extractedEntities) {
+async function enhanceJobQuery(
+  originalMessage,
+  extractedEntities,
+  searchMode = "general",
+) {
   const systemPrompt = `You are a search query optimizer. Return ONLY the enhanced query string, no explanations.`;
   const employmentType = extractedEntities.employmentType || "full_time";
   const objective = extractedEntities.objective || "job_hunting";
+  const freelanceFlavor =
+    searchMode === "freelance" ||
+    employmentType === "freelance" ||
+    objective === "freelance_pitch";
+
   const roleHint = extractedEntities.skills?.length
     ? `${extractedEntities.skills.join(", ")}, software engineer, full-stack developer`
     : "software engineer, full-stack developer, web developer";
-  const jobHint =
-    employmentType === "freelance" || objective === "freelance_pitch"
-      ? "freelance, contract, remote"
-      : "full-time, hiring, careers, role, software engineer, full-stack developer";
+  const jobHint = freelanceFlavor
+    ? "freelance, contract, remote, apply"
+    : "full-time, hiring, careers, apply, software engineer, full-stack developer";
 
-  const platformHint =
-    employmentType === "freelance" || objective === "freelance_pitch"
-      ? "(site:linkedin.com/jobs OR site:linkedin.com/posts OR site:upwork.com OR site:wellfound.com OR site:arc.dev OR site:indeed.com OR site:in.indeed.com OR site:foundit.in)"
-      : "(site:linkedin.com/jobs OR site:naukri.com OR site:indeed.com OR site:in.indeed.com OR site:foundit.in OR site:instahyre.com OR site:wellfound.com OR site:apna.co OR site:monsterindia.com OR site:jobtatkal.com)";
+  const platformHint = freelanceFlavor
+    ? "(site:linkedin.com/jobs OR site:linkedin.com/posts OR site:upwork.com OR site:wellfound.com OR site:arc.dev OR site:indeed.com OR site:in.indeed.com OR site:foundit.in)"
+    : "(site:linkedin.com/jobs OR site:naukri.com OR site:indeed.com OR site:in.indeed.com OR site:foundit.in OR site:instahyre.com OR site:wellfound.com OR site:apna.co OR site:monsterindia.com OR site:jobtatkal.com)";
 
   const prompt = `
-    Turn this into ONE high-recall web search query for real roles and hiring posts (not tutorials or dictionaries).
+    Turn this into ONE high-recall web search query for real job postings and hiring posts (NOT blog articles, contract templates, legal templates, or tutorials).
     
     ORIGINAL: "${originalMessage}"
     SKILLS: ${extractedEntities.skills?.join(", ") || "any"}
     LOCATION: ${extractedEntities.location || "remote"}
+    ROUTER_SEARCH_MODE: ${searchMode}
     EMPLOYMENT_TYPE: ${employmentType}
     OBJECTIVE: ${objective}
     
     Rules:
-    - Add hiring intent where natural: hiring, job opening, careers, contract, freelance, remote, onsite, flexible — pick what matches EMPLOYMENT_TYPE and LOCATION.
-    - LinkedIn: prioritize real listings and recruiter/hiring posts; include keywords like "we are hiring" or "looking for" when OBJECTIVE is freelance_pitch or hiring managers may post in feed.
-    - If the message is about IT/software, bias toward role terms from: ${roleHint}
+    - Prefer phrases: job opening, hiring, careers, apply now, role posted — avoid "contract template" or "sample agreement".
+    - LinkedIn: real listings and recruiter posts; include "we are hiring" or "looking for" when ROUTER_SEARCH_MODE is freelance.
+    - If IT/software, bias toward: ${roleHint}
     - Add these flavor keywords: ${jobHint}
-    - You MUST end your output with this exact platform clause (copy verbatim): ${platformHint}
+    - You SHOULD end with this platform clause (copy verbatim): ${platformHint}
     - Expand tech abbreviations (React → React.js). No question marks. Under 70 words.
     
-    Example: "react work" → "React.js developer remote hiring contract ${platformHint}"
+    Example: "react work" → "React.js developer remote hiring apply ${platformHint}"
   `;
 
   // ---- NEW: use Gemini with Groq/Mistral as fallback ----
@@ -282,13 +315,19 @@ async function enhanceJobQuery(originalMessage, extractedEntities) {
     maxTokens: 100,
   });
 
+  let q = originalMessage.trim();
   if (result.success) {
     trackRequest(); // still count towards daily limit to stay safe
-    return result.content.replace(/^"|"$/g, "").trim();
+    q = result.content.replace(/^"|"$/g, "").trim();
+  } else {
+    console.warn("⚠️ Query enhancer failed, using original message + platform clause");
   }
 
-  console.warn("⚠️ Query enhancer failed, falling back to original message");
-  return originalMessage;
+  if (!/\b(hiring|jobs?\b|careers|vacanc|opening|apply|role posted)\b/i.test(q)) {
+    q = `${q} job opening hiring apply`.trim();
+  }
+
+  return ensureJobSearchPlatformClause(q, platformHint);
 }
 
 // ============================================
@@ -509,6 +548,7 @@ export async function routeUserMessage(userMessage, userContext = {}) {
       const enhancedQuery = await enhanceJobQuery(
         userMessage,
         classification.entities,
+        searchMode,
       );
       console.log(`🔍 Enhanced query (${searchMode}): "${enhancedQuery}"`);
       let jobResult = await callMCPTool(
@@ -604,13 +644,14 @@ export async function routeUserMessage(userMessage, userContext = {}) {
           "⚠️ Intent claimed 'mixed' but no subIntents found. Forcing job search.",
         );
         classification.intent = "job_search";
-        const fallbackEnhancedQuery = await enhanceJobQuery(
-          userMessage,
-          classification.entities,
-        );
         const fallbackMode = inferJobSearchMode(
           userMessage,
           classification.entities,
+        );
+        const fallbackEnhancedQuery = await enhanceJobQuery(
+          userMessage,
+          classification.entities,
+          fallbackMode,
         );
         const fallbackTool =
           fallbackMode === "freelance"
