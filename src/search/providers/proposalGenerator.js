@@ -47,6 +47,7 @@ Generate the personalized email.`;
         temperature: 0.5,
         maxTokens: 320,
         responseFormat: { type: "json_object" },
+        hfModels: ["microsoft/Phi-4-mini-instruct:featherless-ai"],
         groqModels: PROPOSAL_MODELS,
         mistralModels: ["mistral-small-latest"],
         groqApiKey: process.env.GROQ_API_KEY || CONFIG.GROQ_API_KEY,

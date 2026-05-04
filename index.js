@@ -110,7 +110,7 @@ async function main() {
     // await initAllMCPServers();
     // await testMCPServers();
     // await testAIRouter();
-    // await testLeadPipeline();
+    await testLeadPipeline();
 
     process.on("SIGINT", async () => {
       console.log("\n\n🛑 Shutting down...");

@@ -25,6 +25,7 @@ export const CONFIG = {
   DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+  HF_TOKEN: process.env.HF_TOKEN,
 
   // App Config
   TIMEZONE: "Asia/Kolkata",

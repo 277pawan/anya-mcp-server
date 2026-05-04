@@ -127,10 +127,17 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
       );
 
       if (scraped && scraped.success) {
+        const contentStr = scraped.markdown || scraped.content;
+        
+        if (contentStr && /no longer accepting( applications)?/i.test(contentStr)) {
+          console.log(`   ⏭️ Skipping ${result.url.substring(0, 30)} (no longer accepting applications)`);
+          continue;
+        }
+
         scrapedData.push({
           url: result.url,
           title: result.title,
-          content: scraped.markdown || scraped.content,
+          content: contentStr,
           snippet: result.description || "No description available",
         });
       }

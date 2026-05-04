@@ -7,16 +7,20 @@ const GEMINI_API_URL =
   "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 
 function parseRetryDelayMs(errorData) {
-  const message = errorData?.error?.message || "";
+  const message = (typeof errorData?.error === 'string' ? errorData.error : errorData?.error?.message) || "";
   const match = message.match(/try again in (\d+)ms/i);
-  return match ? Math.max(Number(match[1]), 250) : 1200;
+  if (match) return Math.max(Number(match[1]), 250);
+  if (errorData?.estimated_time) return Math.max(errorData.estimated_time * 1000, 1000);
+  return 1200;
 }
 
 function shouldRetry(status, errorData) {
   const code = errorData?.error?.code || "";
+  const message = (typeof errorData?.error === 'string' ? errorData.error : errorData?.error?.message) || "";
   return (
     status === 429 ||
     status === 503 ||
+    message.includes("is currently loading") ||
     code === "model_decommissioned" ||
     code === "model_not_found" ||
     code === "rate_limit_exceeded" ||
@@ -66,6 +70,7 @@ async function callOpenAICompatibleChat({
 }
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const HF_ROUTER_API_URL = "https://router.huggingface.co/v1/chat/completions";
 
 export async function chatWithGlobalFallback({
   messages,
@@ -73,16 +78,30 @@ export async function chatWithGlobalFallback({
   temperature = 0.3,
   maxTokens = 500,
   responseFormat,
+  hfModels = [],
   groqModels = [],
   mistralModels = ["mistral-small-latest"],
   geminiModels = [],
   openrouterModels = [], // NEW
+  hfToken = process.env.HF_TOKEN || CONFIG.HF_TOKEN,
   groqApiKey = process.env.GROQ_API_KEY || CONFIG.GROQ_API_KEY,
   mistralApiKey = process.env.MISTRAL_API_KEY || CONFIG.MISTRAL_API_KEY,
   geminiApiKey = process.env.GEMINI_API_KEY || CONFIG.GEMINI_API_KEY,
   openrouterApiKey = process.env.OPENROUTER_API_KEY || CONFIG.OPENROUTER_API_KEY, // NEW
 }) {
   const candidates = [];
+
+  // Add HuggingFace candidates first
+  if (hfToken && hfModels.length) {
+    for (const model of hfModels) {
+      candidates.push({
+        provider: "huggingface",
+        apiUrl: HF_ROUTER_API_URL,
+        apiKey: hfToken,
+        model,
+      });
+    }
+  }
 
   // Add OpenRouter candidates first if provided (for free models)
   if (openrouterApiKey && openrouterModels.length) {
@@ -165,9 +184,11 @@ export async function chatWithGlobalFallback({
     }
 
     const status = result.status;
-    const errorData = result.data || {};
+    let errorData = result.data || {};
+    if (Array.isArray(errorData)) errorData = errorData[0] || {};
+    const errorMsg = typeof errorData?.error === 'string' ? errorData.error : errorData?.error?.message;
     lastError =
-      errorData?.error?.message || `${candidate.provider} API ${status}`;
+      errorMsg || `${candidate.provider} API ${status}`;
     const errorCode = errorData?.error?.code || "unknown_error";
 
     if (shouldRetry(status, errorData)) {

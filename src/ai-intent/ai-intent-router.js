@@ -152,6 +152,7 @@ async function callGroq(prompt, systemPrompt, model, maxTokens = 500) {
       { role: "system", content: systemPrompt },
       { role: "user", content: prompt },
     ],
+    hfModels: ["microsoft/Phi-4-mini-instruct:featherless-ai"],
     groqModels: [model],
     mistralModels: ["mistral-small-latest"],
     temperature: 0.3,
@@ -308,6 +309,7 @@ async function enhanceJobQuery(
       { role: "system", content: systemPrompt },
       { role: "user", content: prompt },
     ],
+    hfModels: ["microsoft/Phi-4-mini-instruct:featherless-ai"],
     geminiModels: ["gemini-2.5-flash"], // free & fast
     groqModels: [MODELS.QUERY_ENHANCER], // fallback if Gemini fails
     mistralModels: ["mistral-small-latest"],
