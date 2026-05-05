@@ -26,6 +26,9 @@ export const CONFIG = {
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
   HF_TOKEN: process.env.HF_TOKEN,
+  GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+  CF_ACCOUNT_ID: process.env.CF_ACCOUNT_ID,
+  CF_API_TOKEN: process.env.CF_API_TOKEN,
 
   // App Config
   TIMEZONE: "Asia/Kolkata",

@@ -141,7 +141,7 @@ function cleanParams(params) {
 // GENERIC LLM CALL (Groq primary + Mistral fallback)
 // (unchanged – kept for other tasks)
 // ============================================
-async function callGroq(prompt, systemPrompt, model, maxTokens = 500) {
+async function callGroq(prompt, systemPrompt, model, maxTokens = 500, useHF = true) {
   if (!checkRateLimit()) {
     return { success: false, error: "Daily rate limit exceeded" };
   }
@@ -152,7 +152,8 @@ async function callGroq(prompt, systemPrompt, model, maxTokens = 500) {
       { role: "system", content: systemPrompt },
       { role: "user", content: prompt },
     ],
-    hfModels: ["microsoft/Phi-4-mini-instruct:featherless-ai"],
+    githubModels: useHF ? ["gpt-4o-mini"] : [],
+    cloudflareModels: useHF ? ["@cf/microsoft/phi-2"] : [],
     groqModels: [model],
     mistralModels: ["mistral-small-latest"],
     temperature: 0.3,
@@ -191,10 +192,10 @@ async function classifyIntent(message) {
       "confidence": 0.95,
       "entities": {
         "skills": ["skill1", "skill2"],
-        "location": "remote|city|country",
+        "location": "string (e.g., 'Connaught Place', 'remote') or null",
         "date": "YYYY-MM-DD or null",
         "query": "string or null",
-        "placeType": "restaurant|hospital|cafe|etc",
+        "placeType": "string (e.g., 'hospital', 'restaurant') or null",
         "author": "string or null",
         "maxLeads": null,
         "generateTemplates": false,
@@ -204,15 +205,15 @@ async function classifyIntent(message) {
     }
     
     Rules:
-    - casual: hi, hello, how are you, thanks, small talk
-    - job_search: find, search, look for, jobs, freelance, work, clients, leads.
+    - casual: hi, hello, how are you, thanks, small talk, asking for your name/identity, general conversation or any query that does not fit the actionable intents below.
+    - job_search: searching specifically for jobs, freelance work, clients, leads, hiring, opportunities.
     - calendar: schedule, meeting, calendar, day, week
-    - maps: directions, near me, places, restaurant, hospital, coffee
+    - maps: finding physical locations, places, directions, near me, restaurant, hospital, coffee
     - books: book, author, read, novel
     - email: send, check, inbox, email
     - application: apply, proposal, submit
     - followup: follow up, reminder, check status
-    - mixed: STRICTLY for completely unrelated requests (e.g. "find jobs AND check calendar"). Do NOT use "mixed" if they just want any type of jobs/leads; that is purely "job_search".
+    - mixed: STRICTLY for requests containing TWO OR MORE distinct actionable intents (e.g. "find jobs AND check calendar"). Do NOT use "mixed" for single-topic sentences or casual chat.
     
     For job_search / leads:
     - Fill "skills", "location", "employmentType", and "objective" when inferable. Use rich "query" only if the user gave a clear role/stack phrase worth preserving verbatim.
@@ -309,7 +310,8 @@ async function enhanceJobQuery(
       { role: "system", content: systemPrompt },
       { role: "user", content: prompt },
     ],
-    hfModels: ["microsoft/Phi-4-mini-instruct:featherless-ai"],
+    githubModels: ["gpt-4o-mini"],
+    cloudflareModels: ["@cf/microsoft/phi-2"],
     geminiModels: ["gemini-2.5-flash"], // free & fast
     groqModels: [MODELS.QUERY_ENHANCER], // fallback if Gemini fails
     mistralModels: ["mistral-small-latest"],
@@ -322,10 +324,14 @@ async function enhanceJobQuery(
     trackRequest(); // still count towards daily limit to stay safe
     q = result.content.replace(/^"|"$/g, "").trim();
   } else {
-    console.warn("⚠️ Query enhancer failed, using original message + platform clause");
+    console.warn(
+      "⚠️ Query enhancer failed, using original message + platform clause",
+    );
   }
 
-  if (!/\b(hiring|jobs?\b|careers|vacanc|opening|apply|role posted)\b/i.test(q)) {
+  if (
+    !/\b(hiring|jobs?\b|careers|vacanc|opening|apply|role posted)\b/i.test(q)
+  ) {
     q = `${q} job opening hiring apply`.trim();
   }
 
@@ -336,9 +342,9 @@ async function enhanceJobQuery(
 // 3. CASUAL CHAT (unchanged)
 // ============================================
 async function handleCasualChat(message) {
-  const systemPrompt = `You are JARVIS, a friendly AI assistant for a freelance developer. Respond briefly (1-2 sentences), warmly, and be helpful.`;
+  const systemPrompt = `You are Anya, a highly capable and friendly personal assistant. Never refer to yourself as an AI, artificial intelligence, or language model. Respond briefly (1-2 sentences), warmly, and be helpful.`;
 
-  const result = await callGroq(message, systemPrompt, MODELS.CASUAL_CHAT, 150);
+  const result = await callGroq(message, systemPrompt, MODELS.CASUAL_CHAT, 150, false);
 
   return {
     action: "respond",
@@ -555,11 +561,7 @@ export async function routeUserMessage(userMessage, userContext = {}) {
       console.log(`🔍 Enhanced query (${searchMode}): "${enhancedQuery}"`);
       let jobResult = await callMCPTool(
         targetTool,
-        buildLeadPipelineToolParams(
-          classification,
-          userContext,
-          enhancedQuery,
-        ),
+        buildLeadPipelineToolParams(classification, userContext, enhancedQuery),
       );
 
       if (

@@ -70,7 +70,7 @@ async function callOpenAICompatibleChat({
 }
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const HF_ROUTER_API_URL = "https://router.huggingface.co/v1/chat/completions";
+const GITHUB_MODELS_API_URL = "https://models.inference.ai.azure.com/chat/completions";
 
 export async function chatWithGlobalFallback({
   messages,
@@ -78,12 +78,15 @@ export async function chatWithGlobalFallback({
   temperature = 0.3,
   maxTokens = 500,
   responseFormat,
-  hfModels = [],
+  githubModels = [],
+  cloudflareModels = [],
   groqModels = [],
   mistralModels = ["mistral-small-latest"],
   geminiModels = [],
   openrouterModels = [], // NEW
-  hfToken = process.env.HF_TOKEN || CONFIG.HF_TOKEN,
+  githubToken = process.env.GITHUB_TOKEN || CONFIG.GITHUB_TOKEN,
+  cfAccountId = process.env.CF_ACCOUNT_ID || CONFIG.CF_ACCOUNT_ID,
+  cfApiToken = process.env.CF_API_TOKEN || CONFIG.CF_API_TOKEN,
   groqApiKey = process.env.GROQ_API_KEY || CONFIG.GROQ_API_KEY,
   mistralApiKey = process.env.MISTRAL_API_KEY || CONFIG.MISTRAL_API_KEY,
   geminiApiKey = process.env.GEMINI_API_KEY || CONFIG.GEMINI_API_KEY,
@@ -91,14 +94,26 @@ export async function chatWithGlobalFallback({
 }) {
   const candidates = [];
 
-  // Add HuggingFace candidates first
-  if (hfToken && hfModels.length) {
-    for (const model of hfModels) {
+  // Add GitHub Models candidates first (replaces Hugging Face effectively)
+  if (githubToken && githubModels.length) {
+    for (const model of githubModels) {
       candidates.push({
-        provider: "huggingface",
-        apiUrl: HF_ROUTER_API_URL,
-        apiKey: hfToken,
+        provider: "github",
+        apiUrl: GITHUB_MODELS_API_URL,
+        apiKey: githubToken,
         model,
+      });
+    }
+  }
+
+  // Add Cloudflare candidates
+  if (cfAccountId && cfApiToken && cloudflareModels.length) {
+    for (const model of cloudflareModels) {
+      candidates.push({
+        provider: "cloudflare",
+        apiUrl: `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/v1/chat/completions`,
+        apiKey: cfApiToken,
+        model, // e.g. "@cf/microsoft/phi-2"
       });
     }
   }

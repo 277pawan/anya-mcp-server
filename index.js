@@ -72,9 +72,9 @@ async function testAIRouter() {
   console.log("🤖 TEST 5: AI Router with MCP Integration\n");
 
   const testCases = [
-    "hi how are you",
+    "hey what is your name?",
     // "2026-05-28",
-    // "find hospitals near Connaught Place",
+    "find hospitals near Connaught Place",
   ];
 
   for (const testCase of testCases) {
@@ -107,10 +107,10 @@ async function testLeadPipeline() {
  */
 async function main() {
   try {
-    // await initAllMCPServers();
+    await initAllMCPServers();
     // await testMCPServers();
-    // await testAIRouter();
-    await testLeadPipeline();
+    await testAIRouter();
+    // await testLeadPipeline();
 
     process.on("SIGINT", async () => {
       console.log("\n\n🛑 Shutting down...");
