@@ -148,11 +148,31 @@ server.tool(
     // Geoapify GeoJSON coordinates are [lon, lat]
     const [lon, lat] = geoResult.geometry.coordinates;
 
+    // Auto-map common types to Geoapify categories if they don't contain a dot
+    let mappedType = type || "catering.restaurant";
+    if (type && !type.includes(".")) {
+      const typeMap = {
+        hospital: "healthcare.hospital",
+        restaurant: "catering.restaurant",
+        cafe: "catering.cafe",
+        school: "education.school",
+        gym: "sport.fitness",
+        pharmacy: "healthcare.pharmacy",
+        atm: "commercial.finance.atm",
+        bank: "commercial.finance.bank",
+        park: "leisure.park",
+        gas_station: "commercial.gas",
+        supermarket: "commercial.supermarket",
+        mall: "commercial.shopping_mall"
+      };
+      mappedType = typeMap[type.toLowerCase()] || type;
+    }
+
     const params = {
       // FIX: circle filter is "circle:lon,lat,radius" — lon comes first
       filter: `circle:${lon},${lat},${radius}`,
       bias: `proximity:${lon},${lat}`,
-      categories: type || "catering.restaurant",
+      categories: mappedType,
       limit: 10,
     };
     if (keyword) params.name = keyword;

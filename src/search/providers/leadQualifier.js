@@ -84,7 +84,8 @@ Return ONLY valid JSON matching the specified format.`;
     temperature: 0.3,
     maxTokens: 700,
     responseFormat: { type: "json_object" },
-    hfModels: ["microsoft/Phi-4-mini-instruct:featherless-ai"],
+    githubModels: ["gpt-4o-mini"],
+    cloudflareModels: ["@cf/microsoft/phi-2"],
     groqModels: LEAD_QUALIFIER_MODELS,
     openrouterModels: [
       "google/gemini-2.0-flash-lite-preview-02-05:free",
