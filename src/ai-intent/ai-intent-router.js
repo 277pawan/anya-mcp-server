@@ -153,7 +153,7 @@ async function callGroq(prompt, systemPrompt, model, maxTokens = 500, useHF = tr
       { role: "user", content: prompt },
     ],
     githubModels: useHF ? ["gpt-4o-mini"] : [],
-    cloudflareModels: useHF ? ["@cf/microsoft/phi-2"] : [],
+    cloudflareModels: useHF ? ["@cf/mistralai/mistral-small-3.1-24b-instruct", "@cf/microsoft/phi-2"] : [],
     groqModels: [model],
     mistralModels: ["mistral-small-latest"],
     temperature: 0.3,
@@ -311,7 +311,7 @@ async function enhanceJobQuery(
       { role: "user", content: prompt },
     ],
     githubModels: ["gpt-4o-mini"],
-    cloudflareModels: ["@cf/microsoft/phi-2"],
+    cloudflareModels: ["@cf/mistralai/mistral-small-3.1-24b-instruct", "@cf/microsoft/phi-2"],
     geminiModels: ["gemini-2.5-flash"], // free & fast
     groqModels: [MODELS.QUERY_ENHANCER], // fallback if Gemini fails
     mistralModels: ["mistral-small-latest"],

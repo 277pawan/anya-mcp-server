@@ -48,7 +48,7 @@ Generate the personalized email.`;
         maxTokens: 320,
         responseFormat: { type: "json_object" },
         githubModels: ["gpt-4o-mini"],
-        cloudflareModels: ["@cf/microsoft/phi-2"],
+        cloudflareModels: ["@cf/mistralai/mistral-small-3.1-24b-instruct", "@cf/microsoft/phi-2"],
         groqModels: PROPOSAL_MODELS,
         mistralModels: ["mistral-small-latest"],
         groqApiKey: process.env.GROQ_API_KEY || CONFIG.GROQ_API_KEY,

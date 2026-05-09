@@ -85,7 +85,7 @@ Return ONLY valid JSON matching the specified format.`;
     maxTokens: 700,
     responseFormat: { type: "json_object" },
     githubModels: ["gpt-4o-mini"],
-    cloudflareModels: ["@cf/microsoft/phi-2"],
+    cloudflareModels: ["@cf/mistralai/mistral-small-3.1-24b-instruct", "@cf/microsoft/phi-2"],
     groqModels: LEAD_QUALIFIER_MODELS,
     openrouterModels: [
       "google/gemini-2.0-flash-lite-preview-02-05:free",
