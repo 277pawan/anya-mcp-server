@@ -209,6 +209,17 @@ export async function initAllMCPServers() {
   mcpClient.registerTool("getBookDetails", "books");
   mcpClient.registerTool("searchBooksByAuthor", "books");
 
+  mcpClient.startServer("gmail", "./gmail-mcp.js");
+  await mcpClient.waitForServer("gmail");
+  mcpClient.registerTool("listEmails", "gmail");
+  mcpClient.registerTool("getEmail", "gmail");
+  mcpClient.registerTool("sendEmail", "gmail");
+  mcpClient.registerTool("replyToEmail", "gmail");
+  mcpClient.registerTool("searchEmails", "gmail");
+  mcpClient.registerTool("trashEmail", "gmail");
+  mcpClient.registerTool("markEmail", "gmail");
+  mcpClient.registerTool("listLabels", "gmail");
+
   return mcpClient;
 }
 
@@ -340,6 +351,79 @@ export async function searchBooksByAuthor(author, maxResults = 10) {
       author,
       maxResults,
     });
+    return JSON.parse(result.result.content[0].text);
+  } catch (error) {
+    return { error: error.message };
+  }
+}
+
+// Gmail Functions
+export async function listEmails(query, maxResults = 10) {
+  try {
+    const result = await mcpClient.callTool("listEmails", { query, maxResults });
+    return JSON.parse(result.result.content[0].text);
+  } catch (error) {
+    return { error: error.message };
+  }
+}
+
+export async function getEmail(messageId) {
+  try {
+    const result = await mcpClient.callTool("getEmail", { messageId });
+    return JSON.parse(result.result.content[0].text);
+  } catch (error) {
+    return { error: error.message };
+  }
+}
+
+export async function sendEmail(to, subject, body, cc, bcc, isHtml = false) {
+  try {
+    const result = await mcpClient.callTool("sendEmail", { to, subject, body, cc, bcc, isHtml });
+    return JSON.parse(result.result.content[0].text);
+  } catch (error) {
+    return { error: error.message };
+  }
+}
+
+export async function replyToEmail(messageId, body, isHtml = false) {
+  try {
+    const result = await mcpClient.callTool("replyToEmail", { messageId, body, isHtml });
+    return JSON.parse(result.result.content[0].text);
+  } catch (error) {
+    return { error: error.message };
+  }
+}
+
+export async function searchEmails(query, maxResults = 10) {
+  try {
+    const result = await mcpClient.callTool("searchEmails", { query, maxResults });
+    return JSON.parse(result.result.content[0].text);
+  } catch (error) {
+    return { error: error.message };
+  }
+}
+
+export async function trashEmail(messageId) {
+  try {
+    const result = await mcpClient.callTool("trashEmail", { messageId });
+    return JSON.parse(result.result.content[0].text);
+  } catch (error) {
+    return { error: error.message };
+  }
+}
+
+export async function markEmail(messageId, markAs) {
+  try {
+    const result = await mcpClient.callTool("markEmail", { messageId, markAs });
+    return JSON.parse(result.result.content[0].text);
+  } catch (error) {
+    return { error: error.message };
+  }
+}
+
+export async function listLabels() {
+  try {
+    const result = await mcpClient.callTool("listLabels", {});
     return JSON.parse(result.result.content[0].text);
   } catch (error) {
     return { error: error.message };
