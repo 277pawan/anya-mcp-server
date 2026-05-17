@@ -1,4 +1,4 @@
-import { chatWithGlobalFallback } from "../../ai/llm-fallback.js";
+import { CONFIG } from "../../config/config.js";
 
 export class AIGenerator {
   static async generateMessage(nudgeSelection, userState, userName = "there") {
@@ -6,61 +6,58 @@ export class AIGenerator {
     const streak = userState.streak || 0;
     const mood = userState.currentMood;
 
-    let systemPrompt = `You are Anya, a highly intelligent, personal life-engine and assistant for ${userName}.
-Your goal is to send a single, powerful, short push notification (under 200 characters unless it's a rabbit hole).
-Your voice is personal, sometimes direct, sometimes poetic, always insightful. You know ${userName} is trying to grow.
-Do not use generic AI speak. No hashtags. Feel like a message from a brilliant mentor.`;
+    let systemPrompt = `You are Anya, a personal AI for ${userName}. 
+    Generate a short powerful nudge for category: ${category}.
+    Be direct, bold, personal. Max 2 sentences.
+    Do not use hashtags. Feel like a message from a brilliant mentor.`;
 
-    let userPrompt = `Generate a push notification for ${userName}.
+    let userPrompt = `Generate a ${category} nudge for right now.
 Context:
 - Time of day: ${phase}
-- Category: ${category}
 - Nudge Type: ${type}
 - Current Streak: ${streak} days
-- User's reported mood (1-5, where 1 is low energy, 5 is high): ${mood || "Unknown"}
-
-Instructions based on type:`;
+- User's reported mood (1-5): ${mood || "Unknown"}`;
 
     if (type === "big_question") {
       userPrompt += `\nThis is the 'One Big Question' of the day. Ask a profound, thought-provoking question that will sit with them all day. Focus on ${category}.`;
     } else if (type === "rabbit_hole") {
-      systemPrompt += `\nFor 'rabbit_hole' messages, you can be up to 400 characters. Give a mini 3-point insight or a deep mental model.`;
-      userPrompt += `\nThis is a 'Rabbit Hole' deep dive. Share a fascinating insight, mental model, or biological fact related to ${category}. Make it highly engaging.`;
+      systemPrompt = `You are Anya, a personal AI for ${userName}. Generate a short rabbit-hole insight (max 3 sentences) for category: ${category}.`;
+      userPrompt += `\nThis is a 'Rabbit Hole' deep dive. Share a fascinating insight, mental model, or biological fact related to ${category}.`;
     } else if (type === "streak_nudge") {
-      userPrompt += `\nAcknowledge their consistency. This is day ${streak} of them showing up. Frame their consistency as becoming their identity.`;
-    } else {
-      if (mood && mood <= 2) {
-        userPrompt += `\nThe user is having a low energy day. Be gentle but motivating. Focus on micro-actions in ${category}.`;
-      } else if (mood && mood >= 4) {
-        userPrompt += `\nThe user is high energy today! Push them harder, send bigger ideas or challenges in ${category}.`;
-      } else {
-        userPrompt += `\nProvide a sharp, useful micro-intervention for ${category}.`;
-      }
+      userPrompt += `\nAcknowledge their consistency. Frame their consistency as becoming their identity.`;
     }
 
-    userPrompt += `\n\nOutput ONLY the message text. No quotes around it, no extra conversational text.`;
+    userPrompt += `\n\nOutput ONLY the message text.`;
 
-    console.log(`[Anya AI] Requesting generation for: ${category} | Type: ${type}`);
+    console.log(`[Anya AI] Requesting DeepSeek generation for: ${category} | Type: ${type}`);
 
     try {
-      const result = await chatWithGlobalFallback({
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
-        ],
-        taskName: "Anya Life Engine Generation",
-        temperature: 0.7,
-        maxTokens: type === "rabbit_hole" ? 150 : 60
+      const apiKey = CONFIG.DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY;
+      const response = await fetch("https://api.deepseek.com/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "deepseek-chat",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt }
+          ],
+          max_tokens: type === "rabbit_hole" ? 150 : 80
+        })
       });
 
-      if (result.success && result.content) {
-        return result.content.trim();
+      const data = await response.json();
+      if (data.choices && data.choices[0] && data.choices[0].message) {
+        return data.choices[0].message.content.trim();
       } else {
-        console.warn("[Anya AI] Fallback failed, returning default message.", result.error);
+        console.warn("[Anya AI] DeepSeek failed, returning default message.", data);
         return this.getDefaultMessage(category, type);
       }
     } catch (error) {
-      console.error("[Anya AI] Error generating message:", error);
+      console.error("[Anya AI] Error generating message with DeepSeek:", error);
       return this.getDefaultMessage(category, type);
     }
   }
