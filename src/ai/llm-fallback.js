@@ -37,20 +37,30 @@ async function callOpenAICompatibleChat({
   maxTokens,
   responseFormat,
 }) {
-  const response = await fetch(apiUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature,
-      max_tokens: maxTokens,
-      ...(responseFormat ? { response_format: responseFormat } : {}),
-    }),
-  });
+  let response;
+  try {
+    response = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+        ...(responseFormat ? { response_format: responseFormat } : {}),
+      }),
+      signal: AbortSignal.timeout(15000), // add 15s timeout
+    });
+  } catch (error) {
+    return {
+      success: false,
+      status: 500,
+      data: { error: { message: `Network/Timeout Error: ${error.message}`, code: "network_error" } },
+    };
+  }
 
   const data = await response.json().catch(() => ({}));
 

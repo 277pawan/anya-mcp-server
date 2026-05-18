@@ -1,4 +1,4 @@
-import { CONFIG } from "../../config/config.js";
+import { chatWithGlobalFallback } from "../../ai/llm-fallback.js";
 
 export class AIGenerator {
   static async generateMessage(nudgeSelection, userState, userName = "there") {
@@ -7,9 +7,9 @@ export class AIGenerator {
     const mood = userState.currentMood;
 
     let systemPrompt = `You are Anya, a personal AI for ${userName}. 
-    Generate a short powerful nudge for category: ${category}.
-    Be direct, bold, personal. Max 2 sentences.
-    Do not use hashtags. Feel like a message from a brilliant mentor.`;
+Generate a short powerful nudge for category: ${category}.
+Be direct, bold, personal. Max 2 sentences.
+Do not use hashtags. Feel like a message from a brilliant mentor.`;
 
     let userPrompt = `Generate a ${category} nudge for right now.
 Context:
@@ -29,35 +29,32 @@ Context:
 
     userPrompt += `\n\nOutput ONLY the message text.`;
 
-    console.log(`[Anya AI] Requesting DeepSeek generation for: ${category} | Type: ${type}`);
+    console.log(`[Anya AI] Requesting generation for: ${category} | Type: ${type}`);
 
     try {
-      const apiKey = CONFIG.DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY;
-      const response = await fetch("https://api.deepseek.com/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: "deepseek-chat",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt }
-          ],
-          max_tokens: type === "rabbit_hole" ? 150 : 80
-        })
+      const result = await chatWithGlobalFallback({
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        taskName: "Anya Life Engine Generation",
+        temperature: 0.7,
+        maxTokens: type === "rabbit_hole" ? 150 : 80,
+        // specifically request Phi models first
+        githubModels: ["Phi-4", "gpt-4o-mini"],
+        cloudflareModels: ["@cf/microsoft/phi-2"],
+        groqModels: ["llama-3.1-8b-instant"],
+        mistralModels: ["mistral-small-latest"]
       });
 
-      const data = await response.json();
-      if (data.choices && data.choices[0] && data.choices[0].message) {
-        return data.choices[0].message.content.trim();
+      if (result.success && result.content) {
+        return result.content.trim();
       } else {
-        console.warn("[Anya AI] DeepSeek failed, returning default message.", data);
+        console.warn("[Anya AI] Fallback failed, returning default message.", result.error);
         return this.getDefaultMessage(category, type);
       }
     } catch (error) {
-      console.error("[Anya AI] Error generating message with DeepSeek:", error);
+      console.error("[Anya AI] Error generating message:", error);
       return this.getDefaultMessage(category, type);
     }
   }

@@ -369,14 +369,49 @@
         "category": "Tech",
         "timestamp": 1779004407400,
         "theme": "normal"
+      },
+      {
+        "category": "Body",
+        "timestamp": 1779011926759,
+        "theme": "normal"
+      },
+      {
+        "category": "Health",
+        "timestamp": 1779012415809,
+        "theme": "normal"
+      },
+      {
+        "category": "Mind",
+        "timestamp": 1779026111334,
+        "theme": "normal"
+      },
+      {
+        "category": "Business",
+        "timestamp": 1779026234070,
+        "theme": "rabbit_hole"
+      },
+      {
+        "category": "Tech",
+        "timestamp": 1779026293274,
+        "theme": "normal"
+      },
+      {
+        "category": "Mind",
+        "timestamp": 1779026384110,
+        "theme": "rabbit_hole"
+      },
+      {
+        "category": "Business",
+        "timestamp": 1779026407421,
+        "theme": "normal"
       }
     ],
     "weeklyStats": {
-      "health": 3,
-      "mind": 1,
-      "business": 3,
-      "tech": 1,
-      "body": 1,
+      "health": 4,
+      "mind": 3,
+      "business": 5,
+      "tech": 2,
+      "body": 2,
       "motivation": 0,
       "innovation": 0,
       "reflection": 0
