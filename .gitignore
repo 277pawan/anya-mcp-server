@@ -1,2 +1,23 @@
+# Environment
 .env
-node_modules
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+
+# Adminer GUI (single PHP file — not needed in repo)
+adminer/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
