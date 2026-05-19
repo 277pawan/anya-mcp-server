@@ -1,14 +1,14 @@
 // src/routes/chat.routes.js
-import { Router } from 'express';
-import * as CC from '../controller/chat.controller.js';
+import { Router } from "express";
+import * as cc from "../controller/chat.controller.js";
 
 const router = Router();
 
-router.post('/session',       CC.createSession);
-router.get('/sessions',       CC.listSessions);
-router.get('/session/:id',    CC.getSession);
-router.delete('/session/:id', CC.deleteSession);
-router.post('/message',       CC.sendMessage);
-router.get('/search',         CC.searchMessages);
+router.post("/session", cc.createSession);
+router.get("/sessions", cc.listSessions);
+router.get("/session/:id", cc.getSession);
+router.delete("/session/:id", cc.deleteSession);
+router.post("/message", cc.sendMessage);
+router.get("/search", cc.searchMessages);
 
 export default router;

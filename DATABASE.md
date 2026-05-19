@@ -6,12 +6,12 @@
 
 ## ⚡ Quick Reference
 
-| Action | Command |
-|---|---|
-| Migrate + start server | `npm start` |
-| Run migration only | `npm run migrate` |
-| Seed from userContext.json | `npm run seed` |
-| Start server only | `npm run dev:server` |
+| Action                     | Command              |
+| -------------------------- | -------------------- |
+| Migrate + start server     | `npm start`          |
+| Run migration only         | `npm run migrate`    |
+| Seed from userContext.json | `npm run seed`       |
+| Start server only          | `npm run dev:server` |
 
 ---
 
@@ -35,6 +35,7 @@ npm run migrate
 ```
 
 **If migration fails:**
+
 ```bash
 # Check which table failed
 psql -U anya -d anya_db -c "\dt"
@@ -56,6 +57,7 @@ npm run seed
 ```
 
 After seed, copy the printed UUID into `.env`:
+
 ```
 DEFAULT_USER_ID=<uuid-printed-by-seed>
 ```
@@ -67,26 +69,31 @@ DEFAULT_USER_ID=<uuid-printed-by-seed>
 ## 🔧 Common ALTER Operations
 
 ### Add a column
+
 ```sql
 ALTER TABLE users ADD COLUMN IF NOT EXISTS new_col TEXT;
 ```
 
 ### Drop a column
+
 ```sql
 ALTER TABLE users DROP COLUMN IF EXISTS old_col;
 ```
 
 ### Add a new ENUM value
+
 ```sql
 ALTER TYPE nudge_category_enum ADD VALUE IF NOT EXISTS 'new_category';
 ```
 
 ### Add a new index
+
 ```sql
 CREATE INDEX IF NOT EXISTS idx_name ON table_name (column_name);
 ```
 
 ### Drop an index
+
 ```sql
 DROP INDEX IF EXISTS idx_name;
 ```
@@ -96,20 +103,24 @@ DROP INDEX IF EXISTS idx_name;
 ## 🗑️ Drop Operations
 
 ### Drop a single table (cascade removes FK dependencies)
+
 ```sql
 -- Connect first: psql -U anya -d anya_db
 DROP TABLE IF EXISTS table_name CASCADE;
 ```
 
 ### Drop all tables (full reset — DESTRUCTIVE)
+
 ```sql
 DROP SCHEMA public CASCADE;
 CREATE SCHEMA public;
 GRANT ALL ON SCHEMA public TO anya;
 ```
+
 Then re-run `npm run migrate`.
 
 ### Drop and recreate an ENUM type
+
 ```sql
 -- Must remove all columns using the enum first
 ALTER TABLE nudges ALTER COLUMN theme TYPE TEXT;
@@ -158,7 +169,10 @@ SELECT grantee, privilege_type FROM information_schema.role_table_grants WHERE t
 
 ```js
 // In src/db/migrate.js — add after 001:
-const sql2 = readFileSync(join(__dirname, 'migrations/002_your_change.sql'), 'utf8');
+const sql2 = readFileSync(
+  join(__dirname, "migrations/002_your_change.sql"),
+  "utf8",
+);
 await client.query(sql2);
 ```
 
@@ -195,6 +209,7 @@ src/db/
     └── 001_init.sql     # Full schema (tables, indexes, enums, triggers)
 ```
 
-// Running Adminer throught PHP
+## Running Adminer throught PHP
+
 cd ~/Documents/anya-mcp-server
 php -S localhost:8080 adminer/adminer.php

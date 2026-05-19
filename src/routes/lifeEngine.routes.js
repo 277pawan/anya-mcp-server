@@ -1,15 +1,15 @@
 // src/routes/lifeEngine.routes.js
-import { Router } from 'express';
-import * as LE from '../controller/lifeEngine.controller.js';
+import { Router } from "express";
+import * as le from "../controller/lifeEngine.controller.js";
 
 const router = Router();
 
-router.get('/state',              LE.getState);
-router.put('/streak',             LE.updateStreak);
-router.post('/streak/increment',  LE.incrementStreak);
-router.post('/mood',              LE.logMood);
-router.get('/mood/history',       LE.getMoodHistory);
-router.get('/stats/weekly',       LE.getWeeklyStats);
-router.get('/stats/summary',      LE.getEngagementSummary);
+router.get("/state", le.getState);
+router.put("/streak", le.updateStreak);
+router.post("/streak/increment", le.incrementStreak);
+router.post("/mood", le.logMood);
+router.get("/mood/history", le.getMoodHistory);
+router.get("/stats/weekly", le.getWeeklyStats);
+router.get("/stats/summary", le.getEngagementSummary);
 
 export default router;

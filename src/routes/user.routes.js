@@ -1,18 +1,18 @@
 // src/routes/user.routes.js
-import { Router } from 'express';
-import * as UC from '../controller/user.controller.js';
+import { Router } from "express";
+import * as uc from "../controller/user.controller.js";
 
 const router = Router();
 
-router.get('/profile',       UC.getProfile);
-router.put('/profile',       UC.updateProfile);
-router.get('/skills',        UC.getSkills);
-router.put('/skills',        UC.replaceSkills);
-router.get('/goals',         UC.getGoals);
-router.post('/goals',        UC.createGoal);
-router.patch('/goals/:id',   UC.updateGoal);
-router.delete('/goals/:id',  UC.deleteGoal);
-router.get('/preferences',   UC.getPreferences);
-router.put('/preferences',   UC.updatePreferences);
+router.get("/profile", uc.getProfile);
+router.put("/profile", uc.updateProfile);
+router.get("/skills", uc.getSkills);
+router.put("/skills", uc.replaceSkills);
+router.get("/goals", uc.getGoals);
+router.post("/goals", uc.createGoal);
+router.patch("/goals/:id", uc.updateGoal);
+router.delete("/goals/:id", uc.deleteGoal);
+router.get("/preferences", uc.getPreferences);
+router.put("/preferences", uc.updatePreferences);
 
 export default router;

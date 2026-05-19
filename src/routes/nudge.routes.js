@@ -1,16 +1,16 @@
 // src/routes/nudge.routes.js
-import { Router } from 'express';
-import * as NC from '../controller/nudge.controller.js';
+import { Router } from "express";
+import * as nc from "../controller/nudge.controller.js";
 
 const router = Router();
 
-router.get('/',                  NC.listNudges);
-router.post('/',                 NC.recordNudge);
-router.patch('/:id/engage',      NC.engageNudge);
-router.get('/today/count',       NC.getTodayCount);
-router.get('/categories',        NC.getCategories);
-router.put('/categories/:name',  NC.updateCategory);
-router.get('/schedule',          NC.getSchedule);
-router.put('/schedule/:slot',    NC.updateScheduleSlot);
+router.get("/", nc.listNudges);
+router.post("/", nc.recordNudge);
+router.patch("/:id/engage", nc.engageNudge);
+router.get("/today/count", nc.getTodayCount);
+router.get("/categories", nc.getCategories);
+router.put("/categories/:name", nc.updateCategory);
+router.get("/schedule", nc.getSchedule);
+router.put("/schedule/:slot", nc.updateScheduleSlot);
 
 export default router;
