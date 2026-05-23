@@ -192,6 +192,8 @@ export async function initAllMCPServers() {
   mcpClient.startServer("calendar", "./calender-mcp.js"); // Note: calender-mcp.js (spelling!)
   await mcpClient.waitForServer("calendar");
   mcpClient.registerTool("getMyCalendarDataByDate", "calendar");
+  mcpClient.registerTool("getUpcomingEvents", "calendar");
+  mcpClient.registerTool("searchEvents", "calendar");
 
   mcpClient.startServer("maps", "./maps-mcp.js");
   await mcpClient.waitForServer("maps");
@@ -227,6 +229,34 @@ export async function getCalendar(date) {
   try {
     const result = await mcpClient.callTool("getMyCalendarDataByDate", {
       date,
+    });
+    if (result && result.result && result.result.content) {
+      return JSON.parse(result.result.content[0].text);
+    }
+    return { error: "No response from calendar server" };
+  } catch (error) {
+    return { error: error.message };
+  }
+}
+
+export async function getUpcomingEvents(days = 7, maxResults = 50) {
+  try {
+    const result = await mcpClient.callTool("getUpcomingEvents", {
+      days, maxResults
+    });
+    if (result && result.result && result.result.content) {
+      return JSON.parse(result.result.content[0].text);
+    }
+    return { error: "No response from calendar server" };
+  } catch (error) {
+    return { error: error.message };
+  }
+}
+
+export async function searchEvents(query, from_date, to_date, maxResults = 50) {
+  try {
+    const result = await mcpClient.callTool("searchEvents", {
+      query, from_date, to_date, maxResults
     });
     if (result && result.result && result.result.content) {
       return JSON.parse(result.result.content[0].text);

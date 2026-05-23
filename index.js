@@ -22,6 +22,8 @@ import { streamMessage } from './src/services/chat.service.js';
 import { initAllMCPServers, shutdownMCP, getCalendar, searchNearbyPlaces, geocode, searchBooks } from './src/mcp/mcp-client.js';
 import { routeUserMessage } from './src/ai-intent/ai-intent-router.js';
 import { findLeadsForProposal } from './src/search/leadPipeline.js';
+import { addClient, removeClient } from './src/services/ws-registry.js';
+import { startLifeEngine } from './src/services/life-engine.service.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -92,8 +94,15 @@ wss.on('connection', (ws, _req, { sessionId, userId }) => {
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
 
+  addClient(sessionId, ws);
+
   console.log(`[WS] connected — session: ${sessionId}`);
   ws.send(JSON.stringify({ event: 'connected', sessionId }));
+
+  ws.on('close', () => {
+    removeClient(sessionId);
+    console.log(`[WS] disconnected — session: ${sessionId}`);
+  });
 
   ws.on('message', async (rawData) => {
     try {
@@ -208,6 +217,10 @@ async function boot() {
     // await testAIRouter()
     // await testLeadPipeline()
     console.log('MCP servers ready\n');
+
+    console.log('Starting Life Engine...');
+    startLifeEngine();
+    console.log('Life Engine started\n');
 
     server.listen(PORT, () => {
       console.log(`Anya API Server   → http://localhost:${PORT}`);

@@ -4,6 +4,8 @@ import normalizeDate from "../utils/helper/normalize-date.js";
 import { chatWithGlobalFallback } from "../ai/llm-fallback.js";
 import {
   getCalendar,
+  getUpcomingEvents,
+  searchEvents,
   searchNearbyPlaces,
   geocode,
   searchBooks,
@@ -178,25 +180,47 @@ async function callGroq(prompt, systemPrompt, model, maxTokens = 500, useHF = tr
 // ============================================
 // 1. INTENT CLASSIFIER (unchanged)
 // ============================================
-async function classifyIntent(message) {
+async function classifyIntent(message, history = []) {
   const systemPrompt = `You are a precise intent classifier. Return ONLY valid JSON, no other text.`;
 
+  // Provide last 5 turns of history max to save tokens
+  const recentHistory = history.slice(-5);
+  const historyText = recentHistory.length > 0 
+    ? recentHistory.map(h => `${h.role}: ${h.content}`).join('\\n')
+    : "No previous history in this session.";
+
+  const currentDate = new Date();
+  const currentDateStr = currentDate.toISOString().split('T')[0];
+  const currentMonth = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+
   const prompt = `
-    Classify this user message and extract entities.
+    Classify the intent of the user's latest message given the conversation history.
+    If the user's message is a follow-up, use the history to resolve missing entities (like location, query, etc).
     
-    Message: "${message}"
+    CURRENT DATE: ${currentDateStr} (${currentMonth})
+    
+    HISTORY:
+    ${historyText}
+    
+    LATEST MESSAGE: "${message}"
     
     Return JSON:
     {
-      "intent": "casual|job_search|calendar|maps|books|email|application|followup|mixed",
+      "intent": "casual|job_search|calendar|maps|books|email|application|followup|mixed|missing_info",
       "confidence": 0.95,
+      "missing_fields_question": "If intent is known but required fields are missing, put your follow-up question here to ask the user, otherwise null",
       "entities": {
         "skills": ["skill1", "skill2"],
         "location": "string (e.g., 'Connaught Place', 'remote') or null",
-        "date": "YYYY-MM-DD or null",
+        "date": "EXACT YYYY-MM-DD or null. Calculate this based on CURRENT DATE.",
+        "fromDate": "EXACT YYYY-MM-DD or null. If user asks for a range like 'this month', calculate the first day.",
+        "toDate": "EXACT YYYY-MM-DD or null. If user asks for a range like 'this month', calculate the last day.",
+        "daysAhead": "Number (e.g., 7 for week, 30 for month) if asking for upcoming events, or null",
         "query": "string or null",
         "placeType": "string (e.g., 'hospital', 'restaurant') or null",
         "author": "string or null",
+        "origin": "string or null",
+        "destination": "string or null",
         "maxLeads": null,
         "generateTemplates": false,
         "objective": "job_hunting|freelance_pitch|b2b_sales",
@@ -204,21 +228,22 @@ async function classifyIntent(message) {
       }
     }
     
-    Rules:
-    - casual: hi, hello, how are you, thanks, small talk, asking for your name/identity, general conversation or any query that does not fit the actionable intents below.
-    - job_search: searching specifically for jobs, freelance work, clients, leads, hiring, opportunities.
-    - calendar: schedule, meeting, calendar, day, week
-    - maps: finding physical locations, places, directions, near me, restaurant, hospital, coffee
-    - books: book, author, read, novel
-    - email: send, check, inbox, email
-    - application: apply, proposal, submit
-    - followup: follow up, reminder, check status
-    - mixed: STRICTLY for requests containing TWO OR MORE distinct actionable intents (e.g. "find jobs AND check calendar"). Do NOT use "mixed" for single-topic sentences or casual chat.
+    Rules for Intents:
+    - casual: general conversation, greeting, thanking.
+    - job_search: freelance work, clients, full-time hiring.
+    - calendar: schedule, meeting, day, week.
+    - maps: finding physical locations, directions, near me.
+    - books: book, author, novel.
+    - email: send, check, inbox.
+    - mixed: TWO OR MORE distinct actionable intents.
     
-    For job_search / leads:
-    - Fill "skills", "location", "employmentType", and "objective" when inferable. Use rich "query" only if the user gave a clear role/stack phrase worth preserving verbatim.
-    - maxLeads: MUST be null unless the user explicitly asks for a numeric cap (e.g. "only 5 leads", "top 3 companies"). Do NOT invent a number; the app supplies defaults from user settings.
-    - generateTemplates: true only if they ask for draft emails or proposal text.
+    REQUIRED FIELDS PER INTENT (if missing from both message AND history, set intent to "missing_info" and provide missing_fields_question):
+    - maps (get directions): 'origin' and 'destination' are required.
+    - maps (search nearby): 'location' is required.
+    - maps (geocode): 'location' is required.
+    - books: 'query' or 'author' is required.
+    - job_search: can default to 'general' query, no strictly required fields.
+    - calendar: date defaults to 'today'.
   `;
 
   const result = await callGroq(
@@ -428,6 +453,14 @@ async function callMCPTool(toolName, params) {
         result = await getCalendar(cleanedParams.date);
         break;
 
+      case "getUpcomingEvents":
+        result = await getUpcomingEvents(cleanedParams.days, cleanedParams.maxResults);
+        break;
+
+      case "searchEvents":
+        result = await searchEvents(cleanedParams.query, cleanedParams.from_date, cleanedParams.to_date, cleanedParams.maxResults);
+        break;
+
       case "searchNearbyPlaces":
         result = await searchNearbyPlaces(
           cleanedParams.location,
@@ -535,12 +568,18 @@ async function callMCPTool(toolName, params) {
 export async function routeUserMessage(userMessage, userContext = {}) {
   console.log(`\n🎯 Processing: "${userMessage}"`);
 
-  const classification = await classifyIntent(userMessage);
+  const classification = await classifyIntent(userMessage, userContext.history || []);
   console.log(
     `📋 Intent: ${classification.intent} (${Math.round(classification.confidence * 100)}%)`,
   );
 
   switch (classification.intent) {
+    case "missing_info":
+      return {
+        action: "respond",
+        response: classification.missing_fields_question || "Could you provide more details so I can help you?"
+      };
+
     case "casual":
       return await handleCasualChat(userMessage);
 
@@ -553,33 +592,71 @@ export async function routeUserMessage(userMessage, userContext = {}) {
         searchMode === "freelance"
           ? "searchFreelanceJobs"
           : "searchGeneralJobs";
-      const enhancedQuery = await enhanceJobQuery(
-        userMessage,
-        classification.entities,
-        searchMode,
-      );
-      console.log(`🔍 Enhanced query (${searchMode}): "${enhancedQuery}"`);
-      let jobResult = await callMCPTool(
-        targetTool,
-        buildLeadPipelineToolParams(classification, userContext, enhancedQuery),
-      );
+      const executeJobSearch = async () => {
+        let enhancedQuery = classification.entities.query || "";
+        let searchMode = "direct";
+        if (CONFIG.LLM_PROVIDER_PRIMARY !== "huggingface" && CONFIG.LLM_PROVIDER_FALLBACK !== "huggingface") {
+          try {
+            console.log("🤖 Generating enhanced search query...");
+            const queryResponse = await chatWithGlobalFallback(
+              [
+                {
+                  role: "system",
+                  content: "You are an expert technical recruiter and boolean search master...",
+                },
+              ],
+              `Convert this to a strict search query: "${userMessage}". Output ONLY the string.`,
+            );
+            if (queryResponse && queryResponse.text && !queryResponse.text.includes("error")) {
+              enhancedQuery = queryResponse.text.replace(/["']/g, "").trim();
+              searchMode = "ai-enhanced";
+            }
+          } catch (err) {
+            console.warn("⚠️ AI query enhancement failed, falling back to basic extraction.");
+          }
+        }
 
-      if (
-        !jobResult.result?.success ||
-        jobResult.result?.error === "No search results found"
-      ) {
-        console.log(
-          `⚠️ Search failed with enhanced query. Retrying with original user message...`,
-        );
-        jobResult = await callMCPTool(
+        console.log(`🔍 Enhanced query (${searchMode}): "${enhancedQuery}"`);
+        let jobResult = await callMCPTool(
           targetTool,
-          buildLeadPipelineToolParams(classification, userContext, userMessage),
+          buildLeadPipelineToolParams(classification, userContext, enhancedQuery),
         );
-      }
 
-      return jobResult;
+        if (!jobResult.result?.success || jobResult.result?.error === "No search results found") {
+          console.log(`⚠️ Search failed with enhanced query. Retrying with original user message...`);
+          jobResult = await callMCPTool(
+            targetTool,
+            buildLeadPipelineToolParams(classification, userContext, userMessage),
+          );
+        }
+        return jobResult;
+      };
+
+      return {
+        action: "background_task",
+        tool: targetTool,
+        response: `I've started scanning the web for ${classification.entities.employmentType || ''} ${targetTool === 'searchFreelanceJobs' ? 'freelance gigs' : 'roles'} in the background. This usually takes a few seconds. I'll let you know as soon as I have the results!`,
+        execute: executeJobSearch
+      };
 
     case "calendar":
+      if (classification.entities.fromDate && classification.entities.toDate) {
+        console.log(`📅 Fetching events from ${classification.entities.fromDate} to ${classification.entities.toDate}`);
+        return await callMCPTool("searchEvents", {
+          from_date: classification.entities.fromDate,
+          to_date: classification.entities.toDate,
+          maxResults: 50
+        });
+      }
+      
+      if (classification.entities.daysAhead) {
+        console.log(`📅 Fetching upcoming events for ${classification.entities.daysAhead} days`);
+        return await callMCPTool("getUpcomingEvents", {
+          days: classification.entities.daysAhead,
+          maxResults: 50
+        });
+      }
+      
       const date = classification.entities.date || "today";
       const normalizedDate = normalizeDate(date);
       console.log(`📅 Normalized date: ${date} → ${normalizedDate}`);

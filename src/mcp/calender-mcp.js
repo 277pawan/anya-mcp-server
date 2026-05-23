@@ -56,12 +56,12 @@ function getDayBoundsInIST(dateStr) {
 }
 
 function formatISTDisplay(dateTimeStr) {
-  return new Date(dateTimeStr).toLocaleString("en-IN", {
+  return new Date(dateTimeStr).toLocaleString("en-US", {
     timeZone,
-    day: "2-digit",
-    month: "2-digit",
+    day: "numeric",
+    month: "long",
     year: "numeric",
-    hour: "2-digit",
+    hour: "numeric",
     minute: "2-digit",
     hour12: true,
   });
@@ -412,7 +412,7 @@ server.tool(
   "searchEvents",
   "Search calendar events by keyword within a date range.",
   {
-    query: z.string().describe("Search keyword e.g. 'standup' or 'interview'"),
+    query: z.string().optional().describe("Search keyword e.g. 'standup' or 'interview'"),
     from_date: z
       .string()
       .optional()
@@ -437,16 +437,20 @@ server.tool(
       : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
     try {
-      const res = await calendar.events.list({
+      const requestParams = {
         calendarId: CONFIG.CALENDAR_ID,
-        q: query,
         timeMin,
         timeMax,
         timeZone,
         maxResults,
         singleEvents: true,
         orderBy: "startTime",
-      });
+      };
+      if (query && query.trim() !== "") {
+        requestParams.q = query;
+      }
+      
+      const res = await calendar.events.list(requestParams);
 
       const events = (res.data.items || []).map((event) => ({
         id: event.id,
