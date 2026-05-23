@@ -191,36 +191,6 @@ CREATE INDEX IF NOT EXISTS idx_goals_user     ON goals (user_id);
 CREATE INDEX IF NOT EXISTS idx_goals_active   ON goals (user_id) WHERE status = 'active';
 CREATE INDEX IF NOT EXISTS idx_goals_category ON goals (user_id, category);
 
--- ---------------------------------------------------------------------------
--- calendar_events
--- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS calendar_events (
-  id              UUID              PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id         UUID              NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  google_event_id TEXT              UNIQUE,
-  title           TEXT              NOT NULL,
-  description     TEXT,
-  location        TEXT,
-  start_time      TIMESTAMPTZ       NOT NULL,
-  end_time        TIMESTAMPTZ       NOT NULL,
-  is_all_day      BOOLEAN           NOT NULL DEFAULT false,
-  status          event_status_enum NOT NULL DEFAULT 'confirmed',
-  attendees       JSONB             DEFAULT '[]',
-  recurrence      TEXT[],
-  meet_link       TEXT,
-  raw_data        JSONB             DEFAULT '{}',
-  synced_at       TIMESTAMPTZ       NOT NULL DEFAULT now(),
-  created_at      TIMESTAMPTZ       NOT NULL DEFAULT now(),
-  updated_at      TIMESTAMPTZ       NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_cal_user      ON calendar_events (user_id);
-CREATE INDEX IF NOT EXISTS idx_cal_start     ON calendar_events (user_id, start_time);
-CREATE INDEX IF NOT EXISTS idx_cal_upcoming  ON calendar_events (user_id, start_time) WHERE status != 'cancelled';
-CREATE INDEX IF NOT EXISTS idx_cal_google_id ON calendar_events (google_event_id) WHERE google_event_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_cal_fts ON calendar_events USING GIN (
-  to_tsvector('english', coalesce(title,'') || ' ' || coalesce(description,''))
-);
 
 -- ---------------------------------------------------------------------------
 -- chat_sessions
@@ -484,9 +454,7 @@ DO $$ BEGIN
   CREATE TRIGGER trg_goals_updated_at      BEFORE UPDATE ON goals           FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-DO $$ BEGIN
-  CREATE TRIGGER trg_cal_updated_at        BEFORE UPDATE ON calendar_events FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 
 DO $$ BEGIN
   CREATE TRIGGER trg_sessions_updated_at   BEFORE UPDATE ON chat_sessions   FOR EACH ROW EXECUTE FUNCTION update_updated_at();

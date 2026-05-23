@@ -215,7 +215,6 @@ async function boot() {
       console.log(`Health            → http://localhost:${PORT}/health\n`);
       console.log('Routes:');
       console.log('  GET/PUT  /api/user/profile | /skills | /goals | /preferences');
-      console.log('  CRUD     /api/calendar/events  |  GET /today /upcoming  |  POST /sync');
       console.log('  CRUD     /api/chat/session(s)  |  POST /message  |  WS /ws/chat/:id');
       console.log('  GET/PUT  /api/life-engine/state | /streak | /mood | /stats/*');
       console.log('  CRUD     /api/nudges  |  /categories  |  /schedule');

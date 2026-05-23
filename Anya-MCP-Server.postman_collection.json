@@ -1,0 +1,510 @@
+{
+  "info": {
+    "_postman_id": "anya-mcp-server-collection-v2",
+    "name": "🤖 Anya MCP Server (Stateless AI)",
+    "description": "Complete API collection for Anya MCP Server.\n\n## 🧠 Architecture Notice\nAnya uses a stateless approach for external data. Calendar events, Maps, Books, and Gmail are **not** stored in the database. Instead, Anya's AI intent router dynamically fetches this data using Model Context Protocol (MCP) clients when requested.\n\n## 🔌 WebSocket Chat\nPrimary AI interaction should happen via WebSocket to support streaming responses:\n**URL:** `ws://localhost:3000/ws/chat/:sessionId`\n**Payload:** `{\"content\": \"find me freelance jobs\"}`\n\n## Modules\n- 👤 User — Profile, Skills, Goals, Preferences\n- 💬 Chat (REST) — Sessions, Fallback Message, Search\n- 🌱 Life Engine — Streak, Mood, Stats\n- 🔔 Nudges — Records, Categories, Schedule\n- 📜 History — Tool Calls, AI Provider Logs, Leads, Notifications",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "goalId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "sessionId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "nudgeId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "notificationId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "leadId",
+      "value": "1",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "👤 User",
+      "description": "Manage user profile, skills, goals, and preferences.",
+      "item": [
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/user/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "user", "profile"]
+            }
+          }
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Pawan Bisht\",\n  \"email\": \"pawan@example.com\",\n  \"bio\": \"Full-stack developer & AI enthusiast\",\n  \"location\": \"India\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/user/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "user", "profile"]
+            }
+          }
+        },
+        {
+          "name": "Get Skills",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/user/skills",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "user", "skills"]
+            }
+          }
+        },
+        {
+          "name": "Replace Skills",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"skills\": [\n    { \"category\": \"Frontend\", \"name\": \"React\" },\n    { \"category\": \"Backend\", \"name\": \"Node.js\" }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/user/skills",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "user", "skills"]
+            }
+          }
+        },
+        {
+          "name": "Get Goals",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/user/goals?status=active",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "user", "goals"],
+              "query": [{ "key": "status", "value": "active" }]
+            }
+          }
+        },
+        {
+          "name": "Create Goal",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Learn TypeScript\",\n  \"description\": \"Complete TypeScript handbook\",\n  \"target_date\": \"2026-06-30\",\n  \"category\": \"Learning\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/user/goals",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "user", "goals"]
+            }
+          }
+        },
+        {
+          "name": "Update Goal",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"completed\",\n  \"title\": \"Learn TypeScript (Done)\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/user/goals/{{goalId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "user", "goals", "{{goalId}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Preferences",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/user/preferences",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "user", "preferences"]
+            }
+          }
+        },
+        {
+          "name": "Update Preferences",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"theme\": \"dark\",\n  \"nudge_frequency\": \"medium\",\n  \"notification_enabled\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/user/preferences",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "user", "preferences"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "💬 Chat (REST & Auth)",
+      "description": "Manage chat sessions. NOTE: Actual AI chat interaction is heavily optimized for WebSocket streaming at `ws://localhost:3000/ws/chat/:sessionId`. The `POST /message` endpoint is provided as a non-streaming fallback.",
+      "item": [
+        {
+          "name": "Create Session",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Morning Sync with Anya\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/session",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "chat", "session"]
+            }
+          }
+        },
+        {
+          "name": "List Sessions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/sessions?limit=20&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "chat", "sessions"],
+              "query": [
+                { "key": "limit", "value": "20" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Session by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/session/{{sessionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "chat", "session", "{{sessionId}}"]
+            }
+          }
+        },
+        {
+          "name": "Send Message (Fallback REST)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"content\": \"What's on my schedule today?\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/message",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "chat", "message"]
+            },
+            "description": "Use this only if WebSocket isn't available. Intents are routed to MCP tools dynamically (e.g. asking for schedule will trigger the Calendar MCP under the hood)."
+          }
+        },
+        {
+          "name": "Search Messages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/search?q=freelance&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "chat", "search"],
+              "query": [
+                { "key": "q", "value": "freelance" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "🌱 Life Engine",
+      "description": "Track personal growth, streaks, and mood.",
+      "item": [
+        {
+          "name": "Get State",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/life-engine/state",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "life-engine", "state"]
+            }
+          }
+        },
+        {
+          "name": "Increment Streak",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/life-engine/streak/increment",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "life-engine", "streak", "increment"]
+            }
+          }
+        },
+        {
+          "name": "Log Mood",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mood\": 8,\n  \"note\": \"Feeling productive and focused today!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/life-engine/mood",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "life-engine", "mood"]
+            }
+          }
+        },
+        {
+          "name": "Get Mood History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/life-engine/mood/history?days=30&limit=100",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "life-engine", "mood", "history"],
+              "query": [
+                { "key": "days", "value": "30" },
+                { "key": "limit", "value": "100" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Engagement Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/life-engine/stats/summary",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "life-engine", "stats", "summary"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "🔔 Nudges",
+      "description": "Manage AI growth nudges and schedule.",
+      "item": [
+        {
+          "name": "List Nudges",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/nudges?limit=50&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "nudges"],
+              "query": [
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Record Nudge",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category\": \"health\",\n  \"theme\": \"quick_hit\",\n  \"slot\": \"morning\",\n  \"message\": \"Time to drink water!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/nudges",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "nudges"]
+            }
+          }
+        },
+        {
+          "name": "Engage Nudge",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"engaged\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/nudges/{{nudgeId}}/engage",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "nudges", "{{nudgeId}}", "engage"]
+            }
+          }
+        },
+        {
+          "name": "Get Today's Nudge Count",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/nudges/today/count",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "nudges", "today", "count"]
+            }
+          }
+        },
+        {
+          "name": "Get Nudge Schedule",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/nudges/schedule",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "nudges", "schedule"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "📜 History",
+      "description": "System tracking for AI provider usage, MCP tool calls, lead searches, and notifications.",
+      "item": [
+        {
+          "name": "Get MCP Call History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/history/mcp-calls?limit=50&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "history", "mcp-calls"],
+              "query": [
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            },
+            "description": "Shows logs of when Anya used specific MCP tools (e.g. Maps, Books, Calendar) and their latency/success rates."
+          }
+        },
+        {
+          "name": "Get AI Call History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/history/ai-calls?limit=50&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "history", "ai-calls"],
+              "query": [
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            },
+            "description": "Logs every query sent to AI providers (Groq, Gemini, Mistral) showing token usage and latency."
+          }
+        },
+        {
+          "name": "Get AI Call Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/history/ai-calls/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "history", "ai-calls", "stats"]
+            },
+            "description": "Aggregated stats showing which AI providers handled the most traffic and their average latency."
+          }
+        },
+        {
+          "name": "Get Lead History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/history/leads?limit=30&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "history", "leads"],
+              "query": [
+                { "key": "limit", "value": "30" },
+                { "key": "offset", "value": "0" }
+              ]
+            },
+            "description": "History of job/freelance lead generation searches."
+          }
+        },
+        {
+          "name": "Get Notifications",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/history/notifications?unread=true&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "history", "notifications"],
+              "query": [
+                { "key": "unread", "value": "true" },
+                { "key": "limit", "value": "50" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark Notification as Read",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/history/notifications/{{notificationId}}/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "history", "notifications", "{{notificationId}}", "read"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,14 @@
-# 🗄️ Anya DB — Operations Guide
+# 🗄️ Anya DB — Operations & Architecture Guide
 
 > All commands run from project root: `/home/pawan-bisht/Documents/anya-mcp-server`
+
+## 🧠 Core Architecture Philosophy
+
+Anya is designed with a **stateless integration** philosophy for external services:
+- **No DB storage for external data**: Calendar events, Maps, Books, and Emails are **NOT** stored in the PostgreSQL database.
+- **MCP Integration**: Instead, Anya fetches this data dynamically in real-time using Model Context Protocol (MCP) clients whenever the AI intent router requires it.
+- **WebSocket First**: Primary interactions with Anya occur over WebSocket (`ws://localhost:3000/ws/chat/:sessionId`), where the AI streams responses back after invoking necessary MCP tools.
+- **What is stored?**: The database is strictly for Anya's core knowledge (User Profile, Goals, Skills), Life Engine (Nudges, Streaks, Mood), Chat History, and tracking API/Tool usage (History).
 
 ---
 
