@@ -22,7 +22,11 @@ export async function getUserProfile(userId) {
 }
 
 export async function updateUserProfile(userId, fields) {
-  const allowed = ['name', 'contact', 'github_url', 'linkedin_url', 'location', 'availability', 'current_mood', 'timezone'];
+  const allowed = [
+    'name', 'contact', 'github_url', 'linkedin_url', 'location', 'availability', 
+    'current_mood', 'timezone', 'edu_degree', 'edu_university', 'edu_year', 
+    'edu_cgpa', 'rate_min', 'rate_max', 'rate_currency', 'streak', 'longest_streak'
+  ];
   const sets = [], values = [];
   let i = 1;
   for (const [k, v] of Object.entries(fields)) {
@@ -120,4 +124,25 @@ export async function updatePreferences(userId, prefs) {
     [userId, JSON.stringify(prefs)]
   );
   return rows[0]?.preferences || {};
+}
+
+export async function replaceWorkTypes(userId, workTypes) {
+  return withTransaction(async (client) => {
+    await client.query(`DELETE FROM user_work_types WHERE user_id = $1`, [userId]);
+    for (const type of workTypes) {
+      if (type) {
+        // Enums must match: 'remote', 'contract', 'freelance', 'full-time', 'part-time', 'hybrid'
+        const normalized = type.toLowerCase().trim();
+        await client.query(
+          `INSERT INTO user_work_types (user_id, type) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [userId, normalized]
+        );
+      }
+    }
+    const { rows } = await client.query(
+      `SELECT type FROM user_work_types WHERE user_id = $1`,
+      [userId]
+    );
+    return rows.map(r => r.type);
+  });
 }

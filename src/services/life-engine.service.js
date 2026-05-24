@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { getUpcomingEvents } from '../mcp/mcp-client.js';
 import { broadcast } from './ws-registry.js';
+import { sendPushNotification } from './push.service.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import dotenv from 'dotenv';
 
@@ -74,7 +75,15 @@ async function triggerAlert(event, minutesUntil) {
     const result = await model.generateContent(prompt);
     const alertText = result.response.text();
     
+    // 1. Broadcast to active web UI sessions (WebSockets)
     broadcast('notification', { text: alertText, event_id: event.id, minutes_until: minutesUntil });
+
+    // 2. Send OS-Level Push Notification (FCM)
+    // In production, fetch the user's FCM token from DB (e.g., SELECT fcm_token FROM users WHERE id = user_id)
+    // For now, we pass a dummy token to trigger the mock
+    const userDeviceToken = "dummy-device-token-12345"; 
+    await sendPushNotification(userDeviceToken, 'Anya Alert', alertText, { event_id: event.id });
+    
   } catch (err) {
     console.error("Failed to generate alert:", err.message);
   }

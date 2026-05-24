@@ -98,3 +98,14 @@ export async function updatePreferences(req, res) {
     res.status(500).json({ error: err.message });
   }
 }
+
+export async function replaceWorkTypes(req, res) {
+  try {
+    const { workTypes } = req.body;
+    if (!Array.isArray(workTypes)) return res.status(400).json({ error: 'workTypes must be an array of strings' });
+    const data = await UserService.replaceWorkTypes(uid(req), workTypes);
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
