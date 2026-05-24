@@ -10,5 +10,6 @@ router.get("/session/:id", cc.getSession);
 router.delete("/session/:id", cc.deleteSession);
 router.post("/message", cc.sendMessage);
 router.get("/search", cc.searchMessages);
+router.post("/tts", cc.synthesizeSpeech);
 
 export default router;

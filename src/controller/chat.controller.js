@@ -52,3 +52,53 @@ export async function searchMessages(req, res) {
     res.json({ success: true, data: results, count: results.length });
   } catch (err) { res.status(500).json({ error: err.message }); }
 }
+
+export async function synthesizeSpeech(req, res) {
+  try {
+    const { text } = req.body;
+    if (!text) return res.status(400).json({ error: 'text is required' });
+
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_PUBLIC_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'No Google API key configured on backend' });
+    }
+
+    const response = await fetch(`https://texttospeech.googleapis.com/v1beta1/text:synthesize?key=${apiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        audioConfig: {
+          audioEncoding: "MP3",
+          pitch: 0,
+          speakingRate: 1.0
+        },
+        input: {
+          text: text
+        },
+        voice: {
+          languageCode: "en-US",
+          modelName: "gemini-3.1-flash-tts-preview",
+          name: "Kore"
+        }
+      })
+    });
+
+    const data = await response.json();
+    if (data.error) {
+      console.error('Google Cloud TTS Error:', data.error);
+      return res.status(data.error.code || 400).json({ error: data.error.message });
+    }
+
+    if (!data.audioContent) {
+      return res.status(500).json({ error: 'No audio content received from Google Cloud TTS' });
+    }
+
+    const audioDataUri = `data:audio/mp3;base64,${data.audioContent}`;
+    res.json({ success: true, audio: audioDataUri });
+  } catch (err) {
+    console.error('TTS Controller Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+}

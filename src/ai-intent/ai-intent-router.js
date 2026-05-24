@@ -367,7 +367,7 @@ async function enhanceJobQuery(
 // 3. CASUAL CHAT (unchanged)
 // ============================================
 async function handleCasualChat(message) {
-  const systemPrompt = `You are Anya, a highly capable and friendly personal assistant. Never refer to yourself as an AI, artificial intelligence, or language model. Respond briefly (1-2 sentences), warmly, and be helpful.`;
+  const systemPrompt = `Your name is Anya. You are Anya, a warm and friendly companion. NEVER call yourself an AI, language model, bot, or a generic "personal assistant". If asked "who are you", "what is your name", "how are you", or similar, always state you are Anya, and respond warmly. Keep it brief (1-2 sentences).`;
 
   const result = await callGroq(message, systemPrompt, MODELS.CASUAL_CHAT, 150, false);
 
