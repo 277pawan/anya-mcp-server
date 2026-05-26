@@ -1,5 +1,7 @@
 // src/controller/lifeEngine.controller.js
 import * as LifeService from '../services/lifeEngine.service.js';
+import { extractAndSaveInsights } from '../services/chat-cleanup.service.js';
+import { query } from '../db/pool.js';
 
 const uid = (req) => req.userId || process.env.DEFAULT_USER_ID;
 
@@ -56,3 +58,34 @@ export async function getEngagementSummary(req, res) {
     res.json({ success: true, data: summary });
   } catch (err) { res.status(500).json({ error: err.message }); }
 }
+
+export async function triggerCleanupAndInsights(req, res) {
+  try {
+    const userId = uid(req);
+    const insights = await extractAndSaveInsights(userId);
+    
+    const deletedMessages = await query(
+      `DELETE FROM chat_messages WHERE user_id = $1 AND created_at < NOW() - INTERVAL '30 days'`,
+      [userId]
+    );
+
+    const deletedSessions = await query(
+      `DELETE FROM chat_sessions 
+       WHERE user_id = $1 
+         AND (last_message_at < NOW() - INTERVAL '30 days' 
+              OR (last_message_at IS NULL AND created_at < NOW() - INTERVAL '30 days'))`,
+      [userId]
+    );
+
+    res.json({ 
+      success: true, 
+      message: 'Chat cleanup and insight extraction completed successfully', 
+      deletedMessagesCount: deletedMessages.rowCount,
+      deletedSessionsCount: deletedSessions.rowCount,
+      insights 
+    });
+  } catch (err) { 
+    res.status(500).json({ error: err.message }); 
+  }
+}
+

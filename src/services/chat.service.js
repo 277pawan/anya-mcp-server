@@ -1,8 +1,9 @@
-// src/services/chat.service.js
 import { query, withTransaction } from "../db/pool.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import Groq from "groq-sdk";
 import { routeUserMessage } from "../ai-intent/ai-intent-router.js";
+import { getPreferences, getUserProfile } from "./user.service.js";
+
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -16,6 +17,100 @@ Crucial Identity Rules:
 5. If you are provided with SYSTEM DATA, you MUST use the exact details provided. Do NOT invent, guess, or hallucinate names, meeting titles, times, or project details. Only state what is explicitly in the data.
 6. If the data is empty or says "No results", explicitly state that there is nothing there. DO NOT invent fake data to be helpful!
 7. Keep your tone conversational, elegant, human, and helpful.`;
+
+async function getAnyaSystemPrompt(userId, systemPromptExt = "") {
+  let basePrompt = ANYA_PERSONA;
+  try {
+    // 1. Load User Profile Database Context
+    const profile = await getUserProfile(userId);
+    console.log(`[SystemPrompt] Profile loaded for userId=${userId}: name="${profile?.name}", skills=${profile?.skills?.length || 0}`);
+    if (profile) {
+      const skillsList = Array.isArray(profile.skills) && profile.skills.length > 0
+        ? profile.skills.map(s => `${s.name} (${s.category})`).join(', ')
+        : "Not specified";
+      const workTypesList = Array.isArray(profile.work_types) && profile.work_types.length > 0
+        ? profile.work_types.join(', ')
+        : "Not specified";
+      const moodMap = { 1: 'Anxious/Stressed', 2: 'Down/Low', 3: 'Neutral/Calm', 4: 'Motivated/Productive', 5: 'Excited/Happy' };
+      const mood = moodMap[profile.current_mood] || 'Neutral/Calm';
+      const edu = profile.edu_degree
+        ? `${profile.edu_degree} from ${profile.edu_university} (${profile.edu_year})`
+        : "Not specified";
+      const rates = profile.rate_min
+        ? `${profile.rate_min} - ${profile.rate_max} ${profile.rate_currency}/hr`
+        : "Not specified";
+
+      basePrompt += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[CRITICAL: YOUR USER — WHO YOU ARE TALKING TO]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You are Anya. You know EVERYTHING about the person you are talking to. This is your user — your person. You know them intimately. NEVER say "I don't know who you are", "I don't have that information", or "you haven't told me". You ALREADY know all of this:
+
+👤 FULL NAME: ${profile.name || "Pawan Bisht"}
+📧 EMAIL: ${profile.email || "Not specified"}
+📍 LOCATION: ${profile.location || "India"}
+📞 CONTACT: ${profile.contact || "Not specified"}
+🌐 GITHUB: ${profile.github_url || "Not specified"}
+💼 LINKEDIN: ${profile.linkedin_url || "Not specified"}
+🎓 EDUCATION: ${edu}
+💰 HOURLY RATES: ${rates}
+🛠️ SKILLS: ${skillsList}
+💼 WORK TYPES: ${workTypesList}
+😊 CURRENT MOOD: ${mood}
+🔥 ACTIVITY STREAK: ${profile.streak || 0} days (Personal best: ${profile.longest_streak || 0} days)
+🕐 TIMEZONE: ${profile.timezone || "Not specified"}
+📅 AVAILABILITY: ${profile.availability || "Not specified"}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[IRON-CLAD IDENTITY RULES — NEVER BREAK THESE]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+When the user asks ANY of the following (or similar):
+  - "Who am I?", "What's my name?", "Do you know me?", "Tell me about me"
+  - "What do you know about me?", "What do you know about Pawan?"
+  - "Who is Pawan Bisht?", "Tell me about Pawan Bisht"
+  - "What are my skills?", "Where am I from?", "What's my email?"
+  - "What is my mood?", "What's my streak?", "What do I do?"
+  - Anything about "me", "my", "I am" referring to the user's identity
+
+You MUST respond using the facts above. Say things like:
+  ✅ "Of course! You're ${profile.name || "Pawan Bisht"}, based in ${profile.location || "India"}..."
+  ✅ "You're ${profile.name || "Pawan Bisht"}! I know you well..."
+  ✅ "Your skills include ${skillsList.split(',').slice(0, 3).join(', ')} and many more!"
+
+You MUST NEVER say:
+  ❌ "I don't know who you are"
+  ❌ "You haven't told me your name"
+  ❌ "I don't have that information"
+  ❌ "As an AI, I don't know..."
+  ❌ Anything that implies you don't know your own user
+
+You are Anya. ${profile.name || "Pawan Bisht"} created you. You know them completely.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    }
+
+    // 2. Load User Life Context Preferences
+    const prefs = await getPreferences(userId);
+    if (prefs && prefs.life_context) {
+      const lc = prefs.life_context;
+      const struggles = Array.isArray(lc.struggles) ? lc.struggles.join(', ') : (lc.struggles || 'None');
+      const focusGoals = Array.isArray(lc.focusGoals) ? lc.focusGoals.join(', ') : (lc.focusGoals || 'None');
+      const emotionalState = lc.emotionalState || 'Stable';
+      const strategy = lc.motivationStrategy || 'Warm encouragement';
+
+      basePrompt += `\n\n[USER CURRENT SITUATION & STRUGGLES]:
+- Current Focus & Goals: ${focusGoals}
+- Recent Struggles & Obstacles: ${struggles}
+- Emotional State: ${emotionalState}
+- Recommended Motivation Strategy for You (Anya): ${strategy}
+
+[INSTRUCTION]: You are aware of their current situation, emotional state, and struggles. Subtly tailor your tone, empathy, and motivational advice to match their situation. Do NOT mention that you read this from a summary, database, or list. Just be an incredibly intuitive, caring companion who understands what they are going through and supports them accordingly.`;
+    }
+  } catch (err) {
+    console.error("Failed to load user profile or preferences for system prompt:", err);
+  }
+  return basePrompt + systemPromptExt;
+}
+
+
 
 // ---------------------------------------------------------------------------
 // Sessions
@@ -164,7 +259,8 @@ export async function sendMessage(userId, sessionId, content) {
     }
 
     // 3. Format response using AI
-    const aiResponse = await callAI(history, content, systemPromptExt);
+    const aiResponse = await callAI(userId, history, content, systemPromptExt);
+
     const latency = Date.now() - start;
     const msg = await saveMessage(
       client,
@@ -214,6 +310,7 @@ export async function streamMessage(ws, userId, sessionId, content) {
     // 2. Handle MCP tool call logging
     let toolName = null;
     let systemPromptExt = "";
+    let providerUsed = "gemini"; // default; overridden to "groq" on Gemini failure
 
     if (intentResult.success && intentResult.tool) {
       toolName = intentResult.tool;
@@ -276,7 +373,8 @@ export async function streamMessage(ws, userId, sessionId, content) {
           );
           const bgHistory = historyRes2.rows.reverse();
 
-          const { text: bgAIResponse, model, provider } = await callAI(bgHistory, "[Background task finished. Summarize results to user]", bgPrompt);
+          const { text: bgAIResponse, model, provider } = await callAI(userId, bgHistory, "[Background task finished. Summarize results to user]", bgPrompt);
+
 
           // Push the final result to the frontend
           send("background_result", { text: bgAIResponse });
@@ -315,15 +413,17 @@ export async function streamMessage(ws, userId, sessionId, content) {
       systemPromptExt = `\n\nSystem returned these special results:\n${JSON.stringify(intentResult)}\n\nPlease inform the user.`;
     }
 
-    let fullText = "";
-    let providerUsed = "gemini";
+    const systemInstruction = await getAnyaSystemPrompt(userId, systemPromptExt);
+
+    let fullText = ""; // accumulates streamed response from Gemini or Groq fallback
 
     try {
       // Try Gemini streaming
       const model = genAI.getGenerativeModel({
         model: "gemini-1.5-flash",
-        systemInstruction: ANYA_PERSONA + systemPromptExt,
+        systemInstruction: systemInstruction,
       });
+
       const chat = model.startChat({
         history: history.slice(0, -1).map((m) => ({
           role: m.role === "assistant" ? "model" : "user",
@@ -347,7 +447,8 @@ export async function streamMessage(ws, userId, sessionId, content) {
       const groqStream = await groq.chat.completions.create({
         model: "llama-3.1-8b-instant",
         messages: [
-          { role: "system", content: ANYA_PERSONA + systemPromptExt },
+          { role: "system", content: systemInstruction },
+
           ...history.map((m) => ({
             role: m.role === "assistant" ? "assistant" : "user",
             content: m.content,
@@ -400,12 +501,14 @@ export async function searchMessages(userId, q, { limit = 20 } = {}) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-async function callAI(history, content, systemPromptExt = "") {
+async function callAI(userId, history, content, systemPromptExt = "") {
+  const systemInstruction = await getAnyaSystemPrompt(userId, systemPromptExt);
   try {
     const model = genAI.getGenerativeModel({
       model: "gemini-1.5-flash",
-      systemInstruction: ANYA_PERSONA + systemPromptExt,
+      systemInstruction: systemInstruction,
     });
+
     const chat = model.startChat({
       history: history.slice(0, -1).map((m) => ({
         role: m.role === "assistant" ? "model" : "user",

@@ -18,6 +18,14 @@ Context:
 - Current Streak: ${streak} days
 - User's reported mood (1-5): ${mood || "Unknown"}`;
 
+    let lifeContext = userState.life_context || userState.preferences?.life_context;
+    if (lifeContext) {
+      const struggles = Array.isArray(lifeContext.struggles) ? lifeContext.struggles.join(', ') : (lifeContext.struggles || 'None');
+      const focusGoals = Array.isArray(lifeContext.focusGoals) ? lifeContext.focusGoals.join(', ') : (lifeContext.focusGoals || 'None');
+      userPrompt += `\n- User's recent focus/goals: ${focusGoals}\n- User's recent struggles: ${struggles}`;
+      systemPrompt += `\nTailor the motivation and advice specifically to help them overcome their struggles or achieve their goals, without explicitly referencing that you are reading this from a list. Make the nudge extremely relevant and deeply empathetic to their situation.`;
+    }
+
     if (type === "big_question") {
       userPrompt += `\nThis is the 'One Big Question' of the day. Ask a profound, thought-provoking question that will sit with them all day. Focus on ${category}.`;
     } else if (type === "rabbit_hole") {

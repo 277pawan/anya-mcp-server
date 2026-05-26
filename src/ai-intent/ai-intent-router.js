@@ -581,7 +581,9 @@ export async function routeUserMessage(userMessage, userContext = {}) {
       };
 
     case "casual":
-      return await handleCasualChat(userMessage);
+      // Let casual chat fall through to the main streaming Gemini/Groq chat pipeline
+      // where it gets full system prompt context (User Profile, Mood, Struggles) and streams in real-time!
+      return { action: "stream" };
 
     case "job_search":
       const searchMode = inferJobSearchMode(

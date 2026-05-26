@@ -10,14 +10,25 @@ dotenv.config();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const notifiedEvents = new Set(); // In-memory tracker to prevent spam
 
+import { runGlobalChatCleanup } from './chat-cleanup.service.js';
+
 export function startLifeEngine() {
   console.log('❤️ Life Engine pulse started... (Running every 30 mins)');
   
   // Run every 30 minutes to save API quota
   cron.schedule('*/30 * * * *', checkAndSchedule);
   
+  // Run chat history cleanup and insight extraction daily at 2:00 AM
+  cron.schedule('0 2 * * *', () => {
+    runGlobalChatCleanup();
+  });
+  
   // Run once immediately on boot
   checkAndSchedule();
+  
+  // Run initial chat cleanup and insight extraction on boot in the background
+  console.log('🧹 [Life Engine] Triggering initial startup chat cleanup...');
+  runGlobalChatCleanup();
 }
 
 async function checkAndSchedule() {

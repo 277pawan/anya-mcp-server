@@ -11,5 +11,6 @@ router.post("/mood", le.logMood);
 router.get("/mood/history", le.getMoodHistory);
 router.get("/stats/weekly", le.getWeeklyStats);
 router.get("/stats/summary", le.getEngagementSummary);
+router.post("/cleanup", le.triggerCleanupAndInsights);
 
 export default router;

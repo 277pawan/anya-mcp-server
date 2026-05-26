@@ -13,7 +13,7 @@ export async function createSession(req, res) {
 export async function listSessions(req, res) {
   try {
     const sessions = await ChatService.listSessions(uid(req), {
-      limit: parseInt(req.query.limit||'20'), offset: parseInt(req.query.offset||'0')
+      limit: parseInt(req.query.limit || '20'), offset: parseInt(req.query.offset || '0')
     });
     res.json({ success: true, data: sessions });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -48,7 +48,7 @@ export async function searchMessages(req, res) {
   try {
     const { q, limit } = req.query;
     if (!q) return res.status(400).json({ error: 'q (search term) is required' });
-    const results = await ChatService.searchMessages(uid(req), q, { limit: parseInt(limit||'20') });
+    const results = await ChatService.searchMessages(uid(req), q, { limit: parseInt(limit || '20') });
     res.json({ success: true, data: results, count: results.length });
   } catch (err) { res.status(500).json({ error: err.message }); }
 }
@@ -80,7 +80,7 @@ export async function synthesizeSpeech(req, res) {
         voice: {
           languageCode: "en-US",
           modelName: "gemini-3.1-flash-tts-preview",
-          name: "Kore"
+          name: "Aoede"
         }
       })
     });
