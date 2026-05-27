@@ -57,6 +57,53 @@ app.get('/health', (_req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Debug Utilities (dev only — no auth guard needed for single-user Anya)
+// ---------------------------------------------------------------------------
+import cron from 'node-cron';
+
+/** GET /debug/cron-status — list all scheduled cron tasks and their state */
+app.get('/debug/cron-status', (_req, res) => {
+  try {
+    const tasks = cron.getTasks(); // Map<taskId, ScheduledTask> — node-cron v4
+    const taskList = [];
+    tasks.forEach((task, _key) => {
+      taskList.push({
+        id:         task.id,
+        name:       task.name,
+        expression: task.cronExpression,
+        timezone:   task.timezone ?? 'system',
+        state:      task.stateMachine?.state ?? 'unknown',
+      });
+    });
+    res.json({
+      cronLibrary: 'node-cron',
+      version: '4.x',
+      scheduledTaskCount: taskList.length,
+      tasks: taskList,
+      scheduleInfo: {
+        lifeEngine:    'every 30 minutes  →  */30 * * * *',
+        chatCleanup:   'daily at 02:00 AM →  0 2 * * *',
+      },
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/** POST /debug/fire-notification — manually fire a test notification */
+app.post('/debug/fire-notification', async (req, res) => {
+  try {
+    const { sendSmartNotification } = await import('./src/utils/notificationHelper.js');
+    const { type = 'custom', title = 'Anya Test 🔔', body = 'This is a test notification from Anya!', token } = req.body;
+    const userId = req.userId;
+    const result = await sendSmartNotification({ type, userId, token, title, body });
+    res.json({ ok: true, result });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // API Routes
 // ---------------------------------------------------------------------------
 registerRoutes(app);

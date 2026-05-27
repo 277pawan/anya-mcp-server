@@ -2,6 +2,7 @@
 import { query } from '../db/pool.js';
 import { chatWithGlobalFallback } from '../ai/llm-fallback.js';
 import { updatePreferences } from './user.service.js';
+import { sendSmartNotification } from '../utils/notificationHelper.js';
 
 /**
  * Extracts personal development insights (struggles, goals, mood) from the user's recent chat history
@@ -80,6 +81,19 @@ Return ONLY the JSON object. Do not include markdown formatting, backticks, or a
         const parsedContext = JSON.parse(text.trim());
         await updatePreferences(userId, { life_context: parsedContext });
         console.log(`[Chat Insights] Successfully saved life_context for user: ${userId}`);
+
+        // Notify user of newly processed insights
+        await sendSmartNotification({
+          type: 'life_insight',
+          userId,
+          title: '🧠 Anya Life Update',
+          body: `I've analyzed our recent chats. You seem to be feeling ${parsedContext.emotionalState || 'focused'}. Let's keep making progress!`,
+          data: {
+            emotional_state: parsedContext.emotionalState || 'unknown',
+            primary_struggle: parsedContext.struggles?.[0] || 'none'
+          }
+        });
+
         return parsedContext;
       } catch (e) {
         console.error("[Chat Insights] Failed to parse LLM insight JSON, saving raw content:", e);
@@ -90,6 +104,14 @@ Return ONLY the JSON object. Do not include markdown formatting, backticks, or a
           motivationStrategy: "Warm encouragement" 
         };
         await updatePreferences(userId, { life_context: rawContext });
+
+        await sendSmartNotification({
+          type: 'life_insight',
+          userId,
+          title: '🧠 Anya Life Update',
+          body: `I've completed my periodic chat cleanup. Head to settings to view your updated motivation strategy!`,
+        });
+
         return rawContext;
       }
     }

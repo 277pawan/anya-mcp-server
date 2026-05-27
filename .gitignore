@@ -11,6 +11,7 @@ adminer/
 
 # Logs
 logs/
+firebase-admin-key.json
 *.log
 npm-debug.log*
 

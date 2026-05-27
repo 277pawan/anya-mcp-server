@@ -15,6 +15,8 @@ import {
   DEFAULT_LEAD_FETCH_LIMIT,
   DEFAULT_MAX_LEADS,
 } from "../search/leadPipelineDefaults.js";
+import { getUserBioContext, sendProposalBatch } from "../services/email.service.js";
+import { sendSmartNotification } from "../utils/notificationHelper.js";
 
 dotenv.config({ quiet: true });
 
@@ -498,45 +500,92 @@ async function callMCPTool(toolName, params) {
         result = await searchPlaces(cleanedParams.query);
         break;
 
-      case "searchFreelanceJobs":
+      case "searchFreelanceJobs": {
         console.log(
           `🔎 Lead pipeline: maxLeads=${cleanedParams.maxLeads ?? DEFAULT_MAX_LEADS}, fetchLimit=${cleanedParams.fetchLimit ?? DEFAULT_LEAD_FETCH_LIMIT}`,
         );
+        // Fetch live bio from DB instead of hardcoded strings
+        const fbio = await getUserBioContext(cleanedParams.userId || process.env.DEFAULT_USER_ID);
+        const freelanceUserCtx = fbio ? {
+          name:   fbio.name,
+          email:  fbio.email,
+          role:   fbio.role,
+          pitch:  fbio.pitch,
+          skills: fbio.skills,
+          github: fbio.github,
+          linkedin: fbio.linkedin,
+          availability: fbio.availability,
+          resumeUrl: fbio.resumeUrl,
+          resumeFileName: fbio.resumeFileName,
+          lifeContext: fbio.lifeContext,
+          pipelineSettings: cleanedParams.pipelineSettings,
+        } : {
+          name: "Pawan Bisht", role: "Developer",
+          pitch: "I am a skilled developer looking to solve your technical challenges.",
+          pipelineSettings: cleanedParams.pipelineSettings,
+        };
         result = await findLeadsForProposal(cleanedParams.query, {
           maxLeads: cleanedParams.maxLeads ?? DEFAULT_MAX_LEADS,
           fetchLimit: cleanedParams.fetchLimit,
           minScore: 50,
           generateTemplates: cleanedParams.generateTemplates !== false,
           objective: cleanedParams.objective || "freelance_pitch",
-          userContext: {
-            name: "Pawan Bisht",
-            role: "Developer",
-            pitch:
-              "I am a skilled developer looking to solve your technical challenges.",
-            pipelineSettings: cleanedParams.pipelineSettings,
-          },
+          userContext: freelanceUserCtx,
         });
+        // Auto-send proposal emails if leads have emails and bio has resume
+        if (result.success && result.leads?.length && fbio) {
+          const proposalReady = result.leads.filter(l => l.email && l.proposal);
+          if (proposalReady.length > 0) {
+            console.log(`📧 Auto-sending ${proposalReady.length} proposal email(s) with resume...`);
+            const emailResults = await sendProposalBatch(proposalReady, fbio, { delayMs: 1500 });
+            result.emailsSent = emailResults.filter(r => r.success).length;
+            result.emailResults = emailResults;
+            // Fire notification
+            if (result.emailsSent > 0) {
+              await sendSmartNotification({
+                type: 'lead_alert',
+                userId: cleanedParams.userId || process.env.DEFAULT_USER_ID,
+                title: '🚀 Proposals Sent!',
+                body: `Anya just sent ${result.emailsSent} proposal email(s) with your resume attached.`,
+              });
+            }
+          }
+        }
         break;
+      }
 
-      case "searchGeneralJobs":
+      case "searchGeneralJobs": {
         console.log(
           `🔎 Job pipeline: maxLeads=${cleanedParams.maxLeads ?? DEFAULT_MAX_LEADS}, fetchLimit=${cleanedParams.fetchLimit ?? DEFAULT_LEAD_FETCH_LIMIT}`,
         );
+        const gbio = await getUserBioContext(cleanedParams.userId || process.env.DEFAULT_USER_ID);
+        const generalUserCtx = gbio ? {
+          name:   gbio.name,
+          email:  gbio.email,
+          role:   gbio.role,
+          pitch:  gbio.pitch,
+          skills: gbio.skills,
+          github: gbio.github,
+          linkedin: gbio.linkedin,
+          availability: gbio.availability,
+          resumeUrl: gbio.resumeUrl,
+          resumeFileName: gbio.resumeFileName,
+          pipelineSettings: cleanedParams.pipelineSettings,
+        } : {
+          name: "Pawan Bisht", role: "Developer",
+          pitch: "I am a skilled developer looking for impactful full-time opportunities.",
+          pipelineSettings: cleanedParams.pipelineSettings,
+        };
         result = await findLeadsForProposal(cleanedParams.query, {
           maxLeads: cleanedParams.maxLeads ?? DEFAULT_MAX_LEADS,
           fetchLimit: cleanedParams.fetchLimit,
           minScore: 50,
           generateTemplates: cleanedParams.generateTemplates === true,
           objective: "job_hunting",
-          userContext: {
-            name: "Pawan Bisht",
-            role: "Developer",
-            pitch:
-              "I am a skilled developer looking for impactful full-time opportunities.",
-            pipelineSettings: cleanedParams.pipelineSettings,
-          },
+          userContext: generalUserCtx,
         });
         break;
+      }
 
       default:
         console.warn(`⚠️ Unknown tool: ${toolName}`);
@@ -699,10 +748,80 @@ export async function routeUserMessage(userMessage, userContext = {}) {
         maxResults: 10,
       });
 
-    case "email":
-      return await callMCPTool("checkEmails", {
-        query: classification.entities.emailQuery || "is:unread",
+    case "email": {
+      // Handle both "send email to X" and "compose email for Y"
+      const emailInstruction = userMessage;
+      const attachResume = /resume|cv|attach/i.test(emailInstruction);
+
+      // Let AI compose + send — pass userId so it can fetch bio from DB
+      const userId = userContext.userId || process.env.DEFAULT_USER_ID;
+      const bio = await getUserBioContext(userId);
+
+      const emailAI = await chatWithGlobalFallback({
+        taskName: 'email_compose_router',
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert email composer for ${bio?.name || 'the user'}.
+Sender context: Name=${bio?.name}, Email=${bio?.email}, Skills=${bio?.skills}, GitHub=${bio?.github}.
+Extract recipient and compose a professional email from the instruction.
+Output ONLY JSON: {"to":"email","subject":"subject","body":"body text"}`,
+          },
+          { role: 'user', content: emailInstruction },
+        ],
+        groqModels: ['llama-3.3-70b-versatile'],
+        mistralModels: ['mistral-small-latest'],
+        githubModels: ['gpt-4o-mini'],
+        temperature: 0.35,
+        maxTokens: 500,
+        responseFormat: { type: 'json_object' },
       });
+
+      if (!emailAI.success) {
+        return { action: 'respond', response: 'I had trouble composing that email. Please try again.' };
+      }
+
+      let composed;
+      try {
+        let txt = emailAI.content.trim()
+          .replace(/^```json\n?/, '').replace(/^```\n?/, '').replace(/```$/, '');
+        const jS = txt.indexOf('{'), jE = txt.lastIndexOf('}');
+        if (jS !== -1 && jE !== -1) txt = txt.substring(jS, jE + 1);
+        composed = JSON.parse(txt);
+      } catch (_) {
+        return { action: 'respond', response: 'I composed the email but could not parse the result. Try using /api/email/compose directly.' };
+      }
+
+      if (!composed.to || !composed.subject || !composed.body) {
+        return {
+          action: 'respond',
+          response: `I couldn't identify the recipient's email. Could you please include the email address? For example: "send email to john@example.com saying..."`,
+        };
+      }
+
+      const { sendEmail: sendEmailFn } = await import('../services/email.service.js');
+      const sendResult = await sendEmailFn({
+        to:            composed.to,
+        subject:       composed.subject,
+        body:          composed.body,
+        fromName:      bio?.name,
+        attachmentUrl: attachResume ? bio?.resumeUrl  : null,
+        attachmentName:attachResume ? bio?.resumeFileName : null,
+      });
+
+      if (sendResult.success) {
+        return {
+          action: 'respond',
+          response: `✅ Done! I've sent your email to **${composed.to}** with subject "${composed.subject}"${attachResume && bio?.resumeUrl ? ' and attached your resume.' : '.'}`,
+          emailResult: sendResult,
+        };
+      } else {
+        return {
+          action: 'respond',
+          response: `❌ I composed the email but couldn't send it: ${sendResult.error}. Please check your Gmail OAuth credentials.`,
+        };
+      }
+    }
 
     case "application":
       return {

@@ -25,7 +25,8 @@ export async function updateUserProfile(userId, fields) {
   const allowed = [
     'name', 'contact', 'github_url', 'linkedin_url', 'location', 'availability', 
     'current_mood', 'timezone', 'edu_degree', 'edu_university', 'edu_year', 
-    'edu_cgpa', 'rate_min', 'rate_max', 'rate_currency', 'streak', 'longest_streak'
+    'edu_cgpa', 'rate_min', 'rate_max', 'rate_currency', 'streak', 'longest_streak',
+    'fcm_token'
   ];
   const sets = [], values = [];
   let i = 1;
