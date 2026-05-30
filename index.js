@@ -95,7 +95,7 @@ app.post('/debug/fire-notification', async (req, res) => {
   try {
     const { sendSmartNotification } = await import('./src/utils/notificationHelper.js');
     const { type = 'custom', title = 'Anya Test 🔔', body = 'This is a test notification from Anya!', token } = req.body;
-    const userId = req.userId;
+    const userId = req.userId || '89968338-6678-48e0-be01-f8472e550e1d';
     const result = await sendSmartNotification({ type, userId, token, title, body });
     res.json({ ok: true, result });
   } catch (e) {

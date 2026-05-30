@@ -117,6 +117,41 @@ You are Anya. ${profile.name || "Pawan Bisht"} created you. You know them comple
 
 
 // ---------------------------------------------------------------------------
+// Helpers — Gemini history sanitizer
+// ---------------------------------------------------------------------------
+/**
+ * Gemini requires:
+ *   1. history must NOT be empty and must start with role='user'
+ *   2. roles must alternate strictly (user → model → user → …)
+ * This helper enforces both rules so we never crash on bad DB state.
+ */
+function sanitizeGeminiHistory(rawHistory) {
+  // Map DB roles to Gemini roles
+  const mapped = rawHistory.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: m.content || "" }],
+  }));
+
+  // Drop leading 'model' turns — Gemini requires the first turn to be 'user'
+  let start = 0;
+  while (start < mapped.length && mapped[start].role !== "user") start++;
+  const trimmed = mapped.slice(start);
+
+  // Collapse consecutive same-role turns by joining their text
+  const clean = [];
+  for (const turn of trimmed) {
+    if (clean.length > 0 && clean[clean.length - 1].role === turn.role) {
+      // Merge into the last entry
+      clean[clean.length - 1].parts[0].text += "\n" + turn.parts[0].text;
+    } else {
+      clean.push({ role: turn.role, parts: [{ text: turn.parts[0].text }] });
+    }
+  }
+
+  return clean;
+}
+
+// ---------------------------------------------------------------------------
 // Sessions
 // ---------------------------------------------------------------------------
 export async function createSession(userId, title) {
@@ -428,12 +463,10 @@ export async function streamMessage(ws, userId, sessionId, content) {
         model: GEMINI_MODEL,
         systemInstruction: systemInstruction,
       });
-      const chat = model.startChat({
-        history: history.slice(0, -1).map((m) => ({
-          role: m.role === "assistant" ? "model" : "user",
-          parts: [{ text: m.content }],
-        })),
-      });
+      // Build sanitized history — exclude the current user turn (last item),
+      // then ensure it starts with 'user' and has strictly alternating roles.
+      const geminiHistory = sanitizeGeminiHistory(history.slice(0, -1));
+      const chat = model.startChat({ history: geminiHistory });
       const result = await chat.sendMessageStream(content);
       for await (const chunk of result.stream) {
         const text = chunk.text();
@@ -514,12 +547,8 @@ async function callAI(userId, history, content, systemPromptExt = "") {
       model: GEMINI_MODEL,
       systemInstruction: systemInstruction,
     });
-    const chat = model.startChat({
-      history: history.slice(0, -1).map((m) => ({
-        role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: m.content }],
-      })),
-    });
+    const geminiHistory = sanitizeGeminiHistory(history.slice(0, -1));
+    const chat = model.startChat({ history: geminiHistory });
     const result = await chat.sendMessage(content);
     recordModelHealth("gemini", GEMINI_MODEL, true, Date.now() - geminiStart);
     return { text: result.response.text(), provider: "gemini", model: GEMINI_MODEL };

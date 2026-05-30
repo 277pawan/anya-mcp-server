@@ -7,6 +7,7 @@ import nudgeRoutes      from './nudge.routes.js';
 import historyRoutes    from './history.routes.js';
 import adminRoutes      from './admin.routes.js';
 import emailRoutes      from './email.routes.js';
+import focusRoutes      from './focus.routes.js';
 
 /**
  * Register all API routes on the given Express app instance.
@@ -20,4 +21,5 @@ export function registerRoutes(app) {
   app.use('/api/history',     historyRoutes);
   app.use('/api/admin',       adminRoutes);   // model health, diagnostics
   app.use('/api/email',       emailRoutes);   // compose, send, send-proposals
+  app.use('/api/focus',       focusRoutes);   // Pawan's Personal Focus OS endpoints
 }

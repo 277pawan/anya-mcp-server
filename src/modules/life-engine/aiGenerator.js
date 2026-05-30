@@ -52,7 +52,8 @@ Context:
         githubModels: ["Phi-4", "gpt-4o-mini"],
         cloudflareModels: ["@cf/microsoft/phi-2"],
         groqModels: ["llama-3.1-8b-instant"],
-        mistralModels: ["mistral-small-latest"]
+        mistralModels: ["mistral-small-latest"],
+        geminiModels: ["gemini-1.5-flash", "gemini-2.0-flash"]
       });
 
       if (result.success && result.content) {

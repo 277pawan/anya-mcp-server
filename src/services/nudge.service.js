@@ -110,3 +110,13 @@ function getMonday() {
   d.setDate(diff);
   return d.toISOString().split('T')[0];
 }
+
+export async function getLastNudgeTime(userId) {
+  const { rows } = await query(
+    `SELECT delivered_at FROM nudges
+     WHERE user_id = $1
+     ORDER BY delivered_at DESC LIMIT 1`,
+    [userId]
+  );
+  return rows.length ? new Date(rows[0].delivered_at) : null;
+}
