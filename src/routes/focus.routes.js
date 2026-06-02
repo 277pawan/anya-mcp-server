@@ -5,6 +5,7 @@
 import { Router } from 'express';
 import pool from '../db/pool.js';
 import fetch from 'node-fetch';
+import { sendMorningQuoteNudge } from '../services/life-engine.service.js';
 
 const router = Router();
 const UID = '89968338-6678-48e0-be01-f8472e550e1d';
@@ -164,6 +165,16 @@ router.get('/weekly/history', async (req, res) => {
   }
 });
 
+// POST manually fire morning motivation quote (hot-reload friendly secondary router endpoint)
+router.post('/debug/fire-morning-quote', async (req, res) => {
+  try {
+    await sendMorningQuoteNudge();
+    res.json({ success: true, message: 'Morning quote nudge triggered successfully!' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ─── Daily Check-in Endpoints ─────────────────────────────────────────────────
 
 router.post('/checkin', async (req, res) => {
@@ -172,18 +183,18 @@ router.post('/checkin', async (req, res) => {
   try {
     const r = await pool.query(
       `INSERT INTO focus_daily_checkins
-        (user_id, checkin_date, protein_hit, workout_done, water_glasses, skipped_meal, unusual_food, dsa_solved, xp_earned)
-       VALUES ($1, CURRENT_DATE, $2, $3, $4, $5, $6, $7, $8)
-       ON CONFLICT (user_id, checkin_date) DO UPDATE SET
-        protein_hit   = EXCLUDED.protein_hit,
-        workout_done  = EXCLUDED.workout_done,
-        water_glasses = EXCLUDED.water_glasses,
-        skipped_meal  = EXCLUDED.skipped_meal,
-        unusual_food  = COALESCE(EXCLUDED.unusual_food, focus_daily_checkins.unusual_food),
-        dsa_solved    = EXCLUDED.dsa_solved,
-        xp_earned     = focus_daily_checkins.xp_earned + EXCLUDED.xp_earned,
-        created_at    = CURRENT_TIMESTAMP
-       RETURNING *`,
+      (user_id, checkin_date, protein_hit, workout_done, water_glasses, skipped_meal, unusual_food, dsa_solved, xp_earned)
+    VALUES($1, CURRENT_DATE, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT(user_id, checkin_date) DO UPDATE SET
+    protein_hit = EXCLUDED.protein_hit,
+      workout_done = EXCLUDED.workout_done,
+      water_glasses = EXCLUDED.water_glasses,
+      skipped_meal = EXCLUDED.skipped_meal,
+      unusual_food = COALESCE(EXCLUDED.unusual_food, focus_daily_checkins.unusual_food),
+      dsa_solved = EXCLUDED.dsa_solved,
+      xp_earned = focus_daily_checkins.xp_earned + EXCLUDED.xp_earned,
+      created_at = CURRENT_TIMESTAMP
+    RETURNING * `,
       [userId, protein_hit || 'no', workout_done || false, water_glasses || 0,
        skipped_meal || false, unusual_food || null, dsa_solved || false, xp_earned || 0]
     );
@@ -213,14 +224,14 @@ router.post('/roadmap', async (req, res) => {
   const { topic_id, topic_name, pillar, read_status, confidence, notes } = req.body;
   try {
     const r = await pool.query(
-      `INSERT INTO focus_study_roadmap (user_id, topic_id, topic_name, pillar, read_status, confidence, last_reviewed, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,CURRENT_TIMESTAMP,$7)
-       ON CONFLICT (user_id, topic_id) DO UPDATE SET
-        read_status = EXCLUDED.read_status,
-        confidence  = EXCLUDED.confidence,
-        notes       = EXCLUDED.notes,
-        last_reviewed = CURRENT_TIMESTAMP
-       RETURNING *`,
+      `INSERT INTO focus_study_roadmap(user_id, topic_id, topic_name, pillar, read_status, confidence, last_reviewed, notes)
+    VALUES($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, $7)
+       ON CONFLICT(user_id, topic_id) DO UPDATE SET
+    read_status = EXCLUDED.read_status,
+      confidence = EXCLUDED.confidence,
+      notes = EXCLUDED.notes,
+      last_reviewed = CURRENT_TIMESTAMP
+    RETURNING * `,
       [userId, topic_id, topic_name, pillar, read_status || false, confidence || 0, notes || null]
     );
     res.json({ success: true, data: r.rows[0] });
@@ -279,10 +290,10 @@ function parseRoadmapNodes(json) {
 router.get('/content/roadmap/:type', async (req, res) => {
   const userId = uid(req);
   const roadmapType = req.params.type?.toLowerCase();
-  const cacheKey = `roadmap:${roadmapType}`;
+  const cacheKey = `roadmap:${ roadmapType } `;
 
   if (!ROADMAP_SOURCES[roadmapType]) {
-    return res.status(400).json({ success: false, error: `Unknown roadmap type: ${roadmapType}` });
+    return res.status(400).json({ success: false, error: `Unknown roadmap type: ${ roadmapType } ` });
   }
 
   try {
@@ -310,7 +321,7 @@ router.get('/content/roadmap/:type', async (req, res) => {
         topics = parseRoadmapNodes(json);
       }
     } catch (e) {
-      console.warn(`[Roadmap Fetch] Failed: ${e.message}`);
+      console.warn(`[Roadmap Fetch]Failed: ${ e.message } `);
     }
 
     // 3. Robust Fallback Data if GitHub raw is moved or offline
@@ -375,16 +386,16 @@ router.get('/content/roadmap/:type', async (req, res) => {
 
     // 4. Store in cache
     await pool.query(
-      `INSERT INTO focus_content_cache (user_id, cache_key, content_type, title, links_json, source_url, expires_at)
-       VALUES ($1, $2, 'roadmap_list', $3, $4, $5, NOW() + INTERVAL '7 days')
-       ON CONFLICT (user_id, cache_key) DO UPDATE SET
-        links_json = EXCLUDED.links_json, fetched_at = NOW(), expires_at = NOW() + INTERVAL '7 days'`,
-      [userId, cacheKey, `${roadmapType} Roadmap`, JSON.stringify(topics), ROADMAP_SOURCES[roadmapType]]
+      `INSERT INTO focus_content_cache(user_id, cache_key, content_type, title, links_json, source_url, expires_at)
+    VALUES($1, $2, 'roadmap_list', $3, $4, $5, NOW() + INTERVAL '7 days')
+       ON CONFLICT(user_id, cache_key) DO UPDATE SET
+    links_json = EXCLUDED.links_json, fetched_at = NOW(), expires_at = NOW() + INTERVAL '7 days'`,
+      [userId, cacheKey, `${ roadmapType } Roadmap`, JSON.stringify(topics), ROADMAP_SOURCES[roadmapType]]
     );
 
     res.json({ success: true, data: topics, source: 'live' });
   } catch (err) {
-    console.warn(`[RoadmapProxy] ${err.message} — trying stale cache`);
+    console.warn(`[RoadmapProxy] ${ err.message } — trying stale cache`);
     // Return stale cache if available (offline fallback)
     const stale = await pool.query(
       `SELECT links_json FROM focus_content_cache WHERE user_id = $1 AND cache_key = $2`,
@@ -403,7 +414,7 @@ router.get('/content/roadmap/:type', async (req, res) => {
 router.get('/content/articles', async (req, res) => {
   const userId = uid(req);
   const query = (req.query.q || 'javascript').trim();
-  const cacheKey = `article:${query.toLowerCase().replace(/\s+/g, '-')}`;
+  const cacheKey = `article:${ query.toLowerCase().replace(/\s+/g, '-') } `;
 
   try {
     // Check cache (1 day)
@@ -419,71 +430,71 @@ router.get('/content/articles', async (req, res) => {
     // Fetch from DEV.to
     const devRes = await fetch(
       `https://dev.to/api/articles?tag=${encodeURIComponent(query)}&per_page=8&top=7`,
-      { headers: { 'User-Agent': 'AnyaAI-App/1.0' }, timeout: 8000 }
+    { headers: { 'User-Agent': 'AnyaAI-App/1.0' }, timeout: 8000 }
     );
 
-    let articles = [];
-    if (devRes.ok) {
-      const data = await devRes.json();
-      articles = data.map(a => ({
-        id: String(a.id),
-        title: a.title,
-        pillar: a.tag_list?.join(', ') || query,
-        summary: a.description || '',
-        readingTime: a.reading_time_minutes,
-        url: a.url,
-        coverImage: a.cover_image,
-        author: a.user?.name,
-        publishedAt: a.published_at,
-        source: 'devto',
+let articles = [];
+if (devRes.ok) {
+  const data = await devRes.json();
+  articles = data.map(a => ({
+    id: String(a.id),
+    title: a.title,
+    pillar: a.tag_list?.join(', ') || query,
+    summary: a.description || '',
+    readingTime: a.reading_time_minutes,
+    url: a.url,
+    coverImage: a.cover_image,
+    author: a.user?.name,
+    publishedAt: a.published_at,
+    source: 'devto',
+  }));
+}
+
+// Also try Hacker News Algolia for tech topics
+if (articles.length < 4) {
+  const hnRes = await fetch(
+    `https://hn.algolia.com/api/v1/search?tags=story&query=${encodeURIComponent(query)}&hitsPerPage=5`,
+    { timeout: 6000 }
+  );
+  if (hnRes.ok) {
+    const hnData = await hnRes.json();
+    const hnArticles = (hnData.hits || [])
+      .filter(h => h.url && h.title)
+      .map(h => ({
+        id: h.objectID,
+        title: h.title,
+        pillar: query,
+        summary: `${h.points || 0} points · ${h.num_comments || 0} comments`,
+        url: h.url,
+        author: h.author,
+        source: 'hackernews',
       }));
-    }
+    articles = [...articles, ...hnArticles];
+  }
+}
 
-    // Also try Hacker News Algolia for tech topics
-    if (articles.length < 4) {
-      const hnRes = await fetch(
-        `https://hn.algolia.com/api/v1/search?tags=story&query=${encodeURIComponent(query)}&hitsPerPage=5`,
-        { timeout: 6000 }
-      );
-      if (hnRes.ok) {
-        const hnData = await hnRes.json();
-        const hnArticles = (hnData.hits || [])
-          .filter(h => h.url && h.title)
-          .map(h => ({
-            id: h.objectID,
-            title: h.title,
-            pillar: query,
-            summary: `${h.points || 0} points · ${h.num_comments || 0} comments`,
-            url: h.url,
-            author: h.author,
-            source: 'hackernews',
-          }));
-        articles = [...articles, ...hnArticles];
-      }
-    }
-
-    if (articles.length) {
-      await pool.query(
-        `INSERT INTO focus_content_cache (user_id, cache_key, content_type, title, links_json, expires_at)
+if (articles.length) {
+  await pool.query(
+    `INSERT INTO focus_content_cache (user_id, cache_key, content_type, title, links_json, expires_at)
          VALUES ($1,$2,'articles',$3,$4, NOW() + INTERVAL '1 day')
          ON CONFLICT (user_id, cache_key) DO UPDATE SET
           links_json = EXCLUDED.links_json, fetched_at = NOW(), expires_at = NOW() + INTERVAL '1 day'`,
-        [userId, cacheKey, query, JSON.stringify(articles)]
-      );
-    }
+    [userId, cacheKey, query, JSON.stringify(articles)]
+  );
+}
 
-    res.json({ success: true, data: articles, source: 'live' });
+res.json({ success: true, data: articles, source: 'live' });
   } catch (err) {
-    console.warn(`[ArticleProxy] ${err.message}`);
-    const stale = await pool.query(
-      `SELECT links_json FROM focus_content_cache WHERE user_id = $1 AND cache_key = $2`,
-      [userId, cacheKey]
-    );
-    if (stale.rows.length) {
-      return res.json({ success: true, data: stale.rows[0].links_json || [], source: 'stale_cache' });
-    }
-    res.status(503).json({ success: false, error: 'Article search unavailable', offline: true });
+  console.warn(`[ArticleProxy] ${err.message}`);
+  const stale = await pool.query(
+    `SELECT links_json FROM focus_content_cache WHERE user_id = $1 AND cache_key = $2`,
+    [userId, cacheKey]
+  );
+  if (stale.rows.length) {
+    return res.json({ success: true, data: stale.rows[0].links_json || [], source: 'stale_cache' });
   }
+  res.status(503).json({ success: false, error: 'Article search unavailable', offline: true });
+}
 });
 
 // ─── Nutrition Endpoints ───────────────────────────────────────────────────────
@@ -548,7 +559,7 @@ router.put('/nutrition/metrics', async (req, res) => {
         activity_level = COALESCE($5, activity_level)
        WHERE id = $6 RETURNING weight_kg, height_cm, age_years, body_goal, activity_level`,
       [weight_kg || null, height_cm || null, age_years || null,
-       body_goal || null, activity_level || null, userId]
+      body_goal || null, activity_level || null, userId]
     );
     res.json({ success: true, data: r.rows[0] });
   } catch (err) {
@@ -591,7 +602,7 @@ router.get('/nutrition/search', async (req, res) => {
     res.json({ success: true, data: products });
   } catch (err) {
     const qLower = query.toLowerCase();
-    
+
     // Robust Offline Fallback Dictionary for 503 / network errors
     const localFallback = {
       'milk': [
@@ -649,7 +660,7 @@ router.post('/nutrition/log', async (req, res) => {
        VALUES ($1, CURRENT_DATE, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
       [userId, food_name, quantity_g || 100, calories_kcal || 0,
-       protein_g || 0, carbs_g || 0, fat_g || 0, fiber_g || 0, source || 'manual']
+        protein_g || 0, carbs_g || 0, fat_g || 0, fiber_g || 0, source || 'manual']
     );
     res.json({ success: true, data: r.rows[0] });
   } catch (err) {

@@ -690,30 +690,81 @@ export async function routeUserMessage(userMessage, userContext = {}) {
         execute: executeJobSearch
       };
 
-    case "calendar":
+    case "calendar": {
+      /** Format a single meeting event into a readable sentence */
+      function formatMeeting(m) {
+        let line = `• ${m.summary || 'Untitled event'}`;
+        if (m.start) line += ` at ${m.start}`;
+        if (m.end) line += ` – ${m.end}`;
+        if (m.location) line += ` (${m.location})`;
+        if (m.meet_link) line += ` | Meet: ${m.meet_link}`;
+        if (m.attendees && m.attendees.length > 0) line += ` | Attendees: ${m.attendees.join(', ')}`;
+        return line;
+      }
+
+      /** Convert any calendar MCP result into a readable natural-language summary */
+      function summarizeCalendarResult(mcpResult, dateLabel) {
+        if (!mcpResult || mcpResult.error) {
+          return `I wasn't able to fetch your calendar right now. Please try again in a moment.`;
+        }
+
+        // getMyCalendarDataByDate → { meetings: [...] }
+        if (Array.isArray(mcpResult.meetings)) {
+          if (mcpResult.meetings.length === 0) {
+            return `You have no meetings or events scheduled for ${dateLabel}. Your calendar is clear!`;
+          }
+          const lines = mcpResult.meetings.map(formatMeeting);
+          return `Here are your meetings for ${dateLabel}:\n${lines.join('\n')}`;
+        }
+
+        // getUpcomingEvents / searchEvents → { upcoming_events: [...] } or { results: [...] }
+        const events = mcpResult.upcoming_events || mcpResult.results || [];
+        if (!Array.isArray(events) || events.length === 0) {
+          return `You have no upcoming events in that period. Your schedule is wide open!`;
+        }
+        const lines = events.map(formatMeeting);
+        return `Here are your upcoming events:\n${lines.join('\n')}`;
+      }
+
       if (classification.entities.fromDate && classification.entities.toDate) {
         console.log(`📅 Fetching events from ${classification.entities.fromDate} to ${classification.entities.toDate}`);
-        return await callMCPTool("searchEvents", {
+        const raw = await callMCPTool("searchEvents", {
           from_date: classification.entities.fromDate,
           to_date: classification.entities.toDate,
           maxResults: 50
         });
+        const label = `${classification.entities.fromDate} to ${classification.entities.toDate}`;
+        return {
+          ...raw,
+          result: { summary: summarizeCalendarResult(raw.result, label) }
+        };
       }
-      
+
       if (classification.entities.daysAhead) {
         console.log(`📅 Fetching upcoming events for ${classification.entities.daysAhead} days`);
-        return await callMCPTool("getUpcomingEvents", {
+        const raw = await callMCPTool("getUpcomingEvents", {
           days: classification.entities.daysAhead,
           maxResults: 50
         });
+        const label = `the next ${classification.entities.daysAhead} days`;
+        return {
+          ...raw,
+          result: { summary: summarizeCalendarResult(raw.result, label) }
+        };
       }
-      
+
       const date = classification.entities.date || "today";
       const normalizedDate = normalizeDate(date);
+      const dateDisplayLabel = date === "today"
+        ? "today"
+        : new Date(normalizedDate).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" });
       console.log(`📅 Normalized date: ${date} → ${normalizedDate}`);
-      return await callMCPTool("getMyCalendarDataByDate", {
-        date: normalizedDate,
-      });
+      const raw = await callMCPTool("getMyCalendarDataByDate", { date: normalizedDate });
+      return {
+        ...raw,
+        result: { summary: summarizeCalendarResult(raw.result, dateDisplayLabel) }
+      };
+    }
 
     case "maps":
       if (classification.entities.placeType) {

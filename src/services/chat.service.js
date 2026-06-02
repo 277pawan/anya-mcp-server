@@ -274,7 +274,8 @@ export async function sendMessage(userId, sessionId, content) {
           Date.now() - start,
         ],
       );
-      systemPromptExt = `\n\n[SYSTEM DATA]: You just checked the necessary information for the user. Here is what you found:\n${JSON.stringify(intentResult.result).substring(0, 5000)}\n\n[INSTRUCTION]: Respond to the user naturally using this information. Do NOT mention that you used a tool, received JSON, or checked a database. Speak directly as Anya.`;
+      const dataStr = intentResult.result?.summary || JSON.stringify(intentResult.result || {});
+      systemPromptExt = `\n\n[SYSTEM DATA]: You just checked the necessary information for the user. Here is what you found:\n${dataStr.substring(0, 5000)}\n\n[INSTRUCTION]: Respond to the user naturally using this information. Speak directly as Anya in a conversational, warm tone. Do NOT mention that you checked a database, used a tool, or received JSON. If the data says there are no meetings or events, politely tell the user that their schedule is clear!`;
     } else if (intentResult.action === "respond" && intentResult.response) {
       // Intent router already generated casual chat response!
       const latency = Date.now() - start;
@@ -366,7 +367,8 @@ export async function streamMessage(ws, userId, sessionId, content) {
           Date.now() - start,
         ],
       );
-      systemPromptExt = `\n\n[SYSTEM DATA]: You just checked the necessary information for the user. Here is what you found:\n${JSON.stringify(intentResult.result).substring(0, 5000)}\n\n[INSTRUCTION]: Respond to the user naturally using this information. You MUST use the EXACT details (names, times, titles) from the data above. Do NOT invent fake meeting names or projects. Do NOT mention that you used a tool or received JSON. Speak directly as Anya.`;
+      const dataStr = intentResult.result?.summary || JSON.stringify(intentResult.result || {});
+      systemPromptExt = `\n\n[SYSTEM DATA]: You just checked the necessary information for the user. Here is what you found:\n${dataStr.substring(0, 5000)}\n\n[INSTRUCTION]: Respond to the user naturally using this information. You MUST use the EXACT details from the data above if meetings are present. Do NOT invent fake meeting names or projects. Do NOT mention that you checked a database, used a tool, or received JSON. Speak directly as Anya in a conversational, warm tone. If the data says there are no meetings or events, politely tell the user that their schedule is clear!`;
     } else if (intentResult.action === "background_task") {
       // 1. Immediate acknowledgment
       const text = intentResult.response;
