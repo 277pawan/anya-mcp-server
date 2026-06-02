@@ -147,16 +147,25 @@ wss.on('connection', (ws, _req, { sessionId, userId }) => {
   ws.send(JSON.stringify({ event: 'connected', sessionId }));
 
   ws.on('close', () => {
+    ws.isCancelled = true;
     removeClient(sessionId);
     console.log(`[WS] disconnected — session: ${sessionId}`);
   });
 
   ws.on('message', async (rawData) => {
     try {
-      const { content } = JSON.parse(rawData.toString());
+      const msg = JSON.parse(rawData.toString());
+      if (msg.event === 'cancel') {
+        console.log(`[WS] Received cancel request for session: ${sessionId}`);
+        ws.isCancelled = true;
+        return;
+      }
+      const { content } = msg;
       if (!content?.trim()) {
         return ws.send(JSON.stringify({ event: 'error', message: 'content is required' }));
       }
+      // Reset cancel state for new generation
+      ws.isCancelled = false;
       // Stream AI response — no timeout, event-driven chunks
       await streamMessage(ws, userId, sessionId, content.trim());
     } catch (err) {
@@ -167,7 +176,6 @@ wss.on('connection', (ws, _req, { sessionId, userId }) => {
     }
   });
 
-  ws.on('close', () => console.log(`[WS] disconnected — session: ${sessionId}`));
   ws.on('error', (err) => console.error('[WS] socket error:', err));
 });
 

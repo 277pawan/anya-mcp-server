@@ -843,30 +843,10 @@ Output ONLY JSON: {"to":"email","subject":"subject","body":"body text"}`,
 
       if (subIntents.length === 0) {
         console.warn(
-          "⚠️ Intent claimed 'mixed' but no subIntents found. Forcing job search.",
+          "⚠️ Intent claimed 'mixed' but no subIntents found. Forcing casual chat stream.",
         );
-        classification.intent = "job_search";
-        const fallbackMode = inferJobSearchMode(
-          userMessage,
-          classification.entities,
-        );
-        const fallbackEnhancedQuery = await enhanceJobQuery(
-          userMessage,
-          classification.entities,
-          fallbackMode,
-        );
-        const fallbackTool =
-          fallbackMode === "freelance"
-            ? "searchFreelanceJobs"
-            : "searchGeneralJobs";
-        return await callMCPTool(
-          fallbackTool,
-          buildLeadPipelineToolParams(
-            classification,
-            userContext,
-            fallbackEnhancedQuery,
-          ),
-        );
+        classification.intent = "casual";
+        return { action: "stream" };
       }
 
       for (const subIntent of subIntents) {

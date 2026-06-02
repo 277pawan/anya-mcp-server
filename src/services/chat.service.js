@@ -469,6 +469,10 @@ export async function streamMessage(ws, userId, sessionId, content) {
       const chat = model.startChat({ history: geminiHistory });
       const result = await chat.sendMessageStream(content);
       for await (const chunk of result.stream) {
+        if (ws.isCancelled || ws.readyState !== 1) {
+          console.log(`[chat.service] Gemini stream interrupted for session: ${sessionId}`);
+          break;
+        }
         const text = chunk.text();
         fullText += text;
         send("chunk", { text });
@@ -476,37 +480,53 @@ export async function streamMessage(ws, userId, sessionId, content) {
       // ✅ Track Gemini as healthy
       recordModelHealth("gemini", GEMINI_MODEL, true, Date.now() - geminiStart);
     } catch (geminiErr) {
-      // ❌ Track Gemini failure with reason
-      recordModelHealth("gemini", GEMINI_MODEL, false, 0, geminiErr.message);
-      console.warn(`[chat] Gemini stream failed (${GEMINI_MODEL}), falling back to Groq:`, geminiErr.message);
-      providerUsed = "groq";
-      fullText = "";
+      if (ws.isCancelled || ws.readyState !== 1) {
+        console.log(`[chat.service] Gemini stream was cancelled. Not falling back to Groq.`);
+      } else {
+        // ❌ Track Gemini failure with reason
+        recordModelHealth("gemini", GEMINI_MODEL, false, 0, geminiErr.message);
+        console.warn(`[chat] Gemini stream failed (${GEMINI_MODEL}), falling back to Groq:`, geminiErr.message);
+        providerUsed = "groq";
+        fullText = "";
 
-      const groqStart = Date.now();
-      const groqStream = await groq.chat.completions.create({
-        model: GROQ_MODEL,
-        messages: [
-          { role: "system", content: systemInstruction },
-          ...history.map((m) => ({
-            role: m.role === "assistant" ? "assistant" : "user",
-            content: m.content,
-          })),
-        ],
-        stream: true,
-        max_tokens: 1024,
-      });
-      for await (const chunk of groqStream) {
-        const text = chunk.choices[0]?.delta?.content || "";
-        if (text) {
-          fullText += text;
-          send("chunk", { text });
+        const groqStart = Date.now();
+        const groqStream = await groq.chat.completions.create({
+          model: GROQ_MODEL,
+          messages: [
+            { role: "system", content: systemInstruction },
+            ...history.map((m) => ({
+              role: m.role === "assistant" ? "assistant" : "user",
+              content: m.content,
+            })),
+          ],
+          stream: true,
+          max_tokens: 1024,
+        });
+        for await (const chunk of groqStream) {
+          if (ws.isCancelled || ws.readyState !== 1) {
+            console.log(`[chat.service] Groq stream interrupted for session: ${sessionId}`);
+            break;
+          }
+          const text = chunk.choices[0]?.delta?.content || "";
+          if (text) {
+            fullText += text;
+            send("chunk", { text });
+          }
         }
+        // ✅ Track Groq as healthy
+        recordModelHealth("groq", GROQ_MODEL, true, Date.now() - groqStart);
       }
-      // ✅ Track Groq as healthy
-      recordModelHealth("groq", GROQ_MODEL, true, Date.now() - groqStart);
     }
 
     const latency = Date.now() - start;
+    if (ws.isCancelled) {
+      if (!fullText.trim()) {
+        console.log(`[chat.service] Stream cancelled before any content was generated. Skipping assistant message save.`);
+        return;
+      }
+      fullText += " [Interrupted]";
+    }
+
     await saveMessage(client, sessionId, userId, "assistant", fullText, {
       tool_name: toolName,
       provider: providerUsed,
@@ -515,7 +535,9 @@ export async function streamMessage(ws, userId, sessionId, content) {
       is_streamed: true,
     });
 
-    send("done", { latency_ms: latency, provider: providerUsed });
+    if (!ws.isCancelled) {
+      send("done", { latency_ms: latency, provider: providerUsed });
+    }
   });
 }
 

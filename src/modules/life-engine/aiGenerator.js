@@ -8,8 +8,10 @@ export class AIGenerator {
 
     let systemPrompt = `You are Anya, a personal AI for ${userName}. 
 Generate a short powerful nudge for category: ${category}.
-Be direct, bold, personal. Max 2 sentences.
-Do not use hashtags. Feel like a message from a brilliant mentor.`;
+Be direct, bold, personal. Max 2-3 sentences.
+Do not use hashtags. Feel like a message from a brilliant mentor.
+CRITICAL: Do NOT just repeat the user's focus/struggles. Provide fresh, random, and completely NEW content related to the category (Tech, Health, Motivation, Life).
+If appropriate, include a real, useful markdown link to an external website, article, or resource. NEVER generate AI images.`;
 
     let userPrompt = `Generate a ${category} nudge for right now.
 Context:
@@ -23,19 +25,19 @@ Context:
       const struggles = Array.isArray(lifeContext.struggles) ? lifeContext.struggles.join(', ') : (lifeContext.struggles || 'None');
       const focusGoals = Array.isArray(lifeContext.focusGoals) ? lifeContext.focusGoals.join(', ') : (lifeContext.focusGoals || 'None');
       userPrompt += `\n- User's recent focus/goals: ${focusGoals}\n- User's recent struggles: ${struggles}`;
-      systemPrompt += `\nTailor the motivation and advice specifically to help them overcome their struggles or achieve their goals, without explicitly referencing that you are reading this from a list. Make the nudge extremely relevant and deeply empathetic to their situation.`;
+      systemPrompt += `\nTailor the motivation and advice to their situation, but bring in an OUTSIDE perspective, new fact, or new technique. Do not just regurgitate their struggles. Teach them something new.`;
     }
 
     if (type === "big_question") {
       userPrompt += `\nThis is the 'One Big Question' of the day. Ask a profound, thought-provoking question that will sit with them all day. Focus on ${category}.`;
     } else if (type === "rabbit_hole") {
-      systemPrompt = `You are Anya, a personal AI for ${userName}. Generate a short rabbit-hole insight (max 3 sentences) for category: ${category}.`;
-      userPrompt += `\nThis is a 'Rabbit Hole' deep dive. Share a fascinating insight, mental model, or biological fact related to ${category}.`;
+      systemPrompt = `You are Anya, a personal AI for ${userName}. Generate a short rabbit-hole insight (max 4 sentences) for category: ${category}. Share an obscure, fascinating fact, mental model, tech concept, or biological mechanism. Include a markdown link to learn more.`;
+      userPrompt += `\nThis is a 'Rabbit Hole' deep dive. Share a fascinating insight related to ${category}. Provide a real link to a Wikipedia article, MDN Web Docs, or relevant documentation.`;
     } else if (type === "streak_nudge") {
-      userPrompt += `\nAcknowledge their consistency. Frame their consistency as becoming their identity.`;
+      userPrompt += `\nAcknowledge their consistency. Frame their consistency as becoming their identity. Add a random motivational quote or insight.`;
     }
 
-    userPrompt += `\n\nOutput ONLY the message text.`;
+    userPrompt += `\n\nOutput ONLY the message text formatted nicely.`;
 
     console.log(`[Anya AI] Requesting generation for: ${category} | Type: ${type}`);
 

@@ -91,10 +91,9 @@ async function checkDailyNudges() {
         const nowMs = Date.now();
         const lastNudgeAgeMinutes = lastNudgeTime ? (nowMs - lastNudgeTime.getTime()) / 60000 : Infinity;
         
-        // Cooldown trigger: Reduced to 5 minutes during development so the developer can see nudges instantly!
-        const isDev = true;
-        const cooldownThreshold = isDev ? 5 : 150;
-        const shouldNudge = lastNudgeAgeMinutes >= cooldownThreshold || Math.random() < 0.15;
+        // Random interval between 2 to 3 hours (120 - 180 minutes)
+        const randomHoursCooldown = Math.floor(Math.random() * 60) + 120;
+        const shouldNudge = lastNudgeAgeMinutes >= randomHoursCooldown;
         
         if (shouldNudge) {
           console.log(`💡 [Life Engine] Triggering dev nudge check. (Sent today: ${sentToday}/${maxNudges}, Last age: ${lastNudgeAgeMinutes.toFixed(1)} mins)`);
