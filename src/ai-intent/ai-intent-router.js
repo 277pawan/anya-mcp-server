@@ -20,6 +20,31 @@ import { sendSmartNotification } from "../utils/notificationHelper.js";
 
 dotenv.config({ quiet: true });
 
+const APP_PACKAGE_MAP = {
+  "youtube music": "com.google.android.apps.youtube.music",
+  "youtubemusic": "com.google.android.apps.youtube.music",
+  "yt music": "com.google.android.apps.youtube.music",
+  "ytmusic": "com.google.android.apps.youtube.music",
+  "youtube": "com.google.android.youtube",
+  "whatsapp": "com.whatsapp",
+  "gmail": "com.google.android.gm",
+  "calendar": "com.google.android.calendar",
+  "maps": "com.google.android.apps.maps",
+  "google maps": "com.google.android.apps.maps",
+  "browser": "com.android.chrome",
+  "chrome": "com.android.chrome",
+  "spotify": "com.spotify.music",
+  "facebook": "com.facebook.katana",
+  "instagram": "com.instagram.android",
+  "twitter": "com.twitter.android",
+  "x": "com.twitter.android",
+  "telegram": "org.telegram.messenger",
+  "linkedin": "com.linkedin.android",
+  "play store": "com.android.vending",
+  "playstore": "com.android.vending",
+  "settings": "com.android.settings"
+};
+
 function resolvePipelineMaxLeads(entities, pipeline) {
   const raw = entities?.maxLeads ?? pipeline?.maxLeads;
   if (raw == null || raw === "") return DEFAULT_MAX_LEADS;
@@ -208,7 +233,7 @@ async function classifyIntent(message, history = []) {
     
     Return JSON:
     {
-      "intent": "casual|job_search|calendar|maps|books|email|application|followup|mixed|missing_info",
+      "intent": "casual|job_search|calendar|maps|books|email|application|followup|mixed|missing_info|device_control",
       "confidence": 0.95,
       "missing_fields_question": "If intent is known but required fields are missing, put your follow-up question here to ask the user, otherwise null",
       "entities": {
@@ -226,7 +251,10 @@ async function classifyIntent(message, history = []) {
         "maxLeads": null,
         "generateTemplates": false,
         "objective": "job_hunting|freelance_pitch|b2b_sales",
-        "employmentType": "full_time|freelance|contract|internship|part_time"
+        "employmentType": "full_time|freelance|contract|internship|part_time",
+        "musicQuery": "string (e.g., a song name 'shape of you', artist, or 'jazz') or null",
+        "appName": "string (e.g., 'youtube music', 'whatsapp', 'gmail', 'calendar', 'youtube', 'maps') or null",
+        "url": "string (e.g., 'https://google.com') or null"
       }
     }
     
@@ -237,6 +265,7 @@ async function classifyIntent(message, history = []) {
     - maps: finding physical locations, directions, near me.
     - books: book, author, novel.
     - email: send, check, inbox.
+    - device_control: user requests to play music, play a specific song, check/open YouTube Music, open other mobile apps on their phone (like WhatsApp, Gmail, Calendar, Maps, Play Store, etc.), or open website URLs on their mobile phone.
     - mixed: TWO OR MORE distinct actionable intents.
     
     REQUIRED FIELDS PER INTENT (if missing from both message AND history, set intent to "missing_info" and provide missing_fields_question):
@@ -246,6 +275,7 @@ async function classifyIntent(message, history = []) {
     - books: 'query' or 'author' is required.
     - job_search: can default to 'general' query, no strictly required fields.
     - calendar: date defaults to 'today'.
+    - device_control: no strictly required fields (if user says "play music", musicQuery defaults to a default query or random music).
   `;
 
   const result = await callGroq(
@@ -798,6 +828,94 @@ export async function routeUserMessage(userMessage, userContext = {}) {
         query: classification.entities.query,
         maxResults: 10,
       });
+
+    case "device_control": {
+      const { musicQuery, appName, url: entityUrl } = classification.entities;
+      
+      let command = "open_app";
+      let query = null;
+      let packageName = null;
+      let url = null;
+      let responseText = "";
+
+      const isMusicRequest = musicQuery !== null || /play\s+(some\s+)?music|songs?/i.test(userMessage) || (/youtube\s+music/i.test(userMessage) && /play/i.test(userMessage));
+
+      // Try to extract URL manually as a fallback
+      const urlRegex = /(https?:\/\/[^\s]+)/gi;
+      const domainRegex = /([a-zA-Z0-9-]+\.[a-zA-Z]{2,6}[^\s]*)/gi;
+      const manualUrlMatch = userMessage.match(urlRegex) || userMessage.match(domainRegex);
+      const manualUrl = manualUrlMatch ? (manualUrlMatch[0].startsWith('http') ? manualUrlMatch[0] : 'https://' + manualUrlMatch[0]) : null;
+
+      if (isMusicRequest) {
+        command = "play_music";
+        query = musicQuery || "random songs";
+        
+        let videoId = null;
+        try {
+          console.log(`[ai-intent-router] Resolving music query: "${query}"`);
+          const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+          const res = await fetch(searchUrl, {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+            }
+          });
+          if (res.ok) {
+            const html = await res.text();
+            const match = html.match(/\/watch\?v=([a-zA-Z0-9_-]{11})/);
+            if (match) {
+              videoId = match[1];
+              console.log(`[ai-intent-router] Resolved video ID: ${videoId}`);
+            }
+          }
+        } catch (e) {
+          console.error("[ai-intent-router] Failed to resolve music query to video ID:", e);
+        }
+
+        if (videoId) {
+          url = `https://music.youtube.com/watch?v=${videoId}`;
+          responseText = `Sure! Playing "${query}" on YouTube Music.`;
+        } else {
+          url = `https://music.youtube.com/search?q=${encodeURIComponent(query)}`;
+          responseText = `Sure! Opening YouTube Music for "${query}".`;
+        }
+      } else if (entityUrl || manualUrl) {
+        command = "open_url";
+        url = entityUrl || manualUrl;
+        responseText = `Opening the link: ${url}`;
+      } else if (appName) {
+        const normalizedApp = appName.toLowerCase().trim();
+        packageName = APP_PACKAGE_MAP[normalizedApp] || null;
+        
+        if (packageName) {
+          responseText = `Opening ${appName}...`;
+        } else {
+          // If we don't have the package, guess it
+          packageName = `com.google.android.apps.${normalizedApp}`;
+          responseText = `Opening ${appName}...`;
+        }
+      } else {
+        // Fallback: check if we can parse app name using simple words
+        const openAppMatch = userMessage.match(/open\s+([a-zA-Z0-9\s]+)/i);
+        if (openAppMatch) {
+          const guessedAppName = openAppMatch[1].trim().toLowerCase();
+          packageName = APP_PACKAGE_MAP[guessedAppName] || `com.google.android.apps.${guessedAppName}`;
+          responseText = `Opening ${openAppMatch[1]}...`;
+        } else {
+          command = "play_music";
+          query = "some music";
+          responseText = "Sure, playing some music on YouTube Music for you!";
+        }
+      }
+
+      return {
+        action: "device_command",
+        command,
+        query,
+        packageName,
+        url,
+        response: responseText
+      };
+    }
 
     case "email": {
       // Handle both "send email to X" and "compose email for Y"

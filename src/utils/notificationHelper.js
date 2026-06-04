@@ -19,9 +19,9 @@
  *   - 'custom'           → Arbitrary title + body from anywhere in the codebase
  */
 
-import { sendPushNotification } from '../services/push.service.js';
-import { broadcast } from '../services/ws-registry.js';
-import { query } from '../db/pool.js';
+import { sendPushNotification } from "../services/push.service.js";
+import { broadcast } from "../services/ws-registry.js";
+import { query } from "../db/pool.js";
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 
@@ -30,18 +30,46 @@ import { query } from '../db/pool.js';
  * Each type has: minIntervalMs (cooldown), quietHoursRespected, defaultEnabled.
  */
 const NOTIFICATION_RULES = {
-  meeting_alert:  { minIntervalMs: 0,          quietHoursRespected: false, defaultEnabled: true  },
-  ai_reply:       { minIntervalMs: 5 * 60_000,  quietHoursRespected: true,  defaultEnabled: false },
-  mcp_result:     { minIntervalMs: 10 * 60_000, quietHoursRespected: true,  defaultEnabled: true  },
-  nudge:          { minIntervalMs: 60 * 60_000, quietHoursRespected: true,  defaultEnabled: true  },
-  lead_alert:     { minIntervalMs: 30 * 60_000, quietHoursRespected: true,  defaultEnabled: true  },
-  life_insight:   { minIntervalMs: 24 * 3600_000, quietHoursRespected: false, defaultEnabled: true },
-  custom:         { minIntervalMs: 0,           quietHoursRespected: false, defaultEnabled: true  },
+  meeting_alert: {
+    minIntervalMs: 0,
+    quietHoursRespected: false,
+    defaultEnabled: true,
+  },
+  ai_reply: {
+    minIntervalMs: 5 * 60_000,
+    quietHoursRespected: true,
+    defaultEnabled: false,
+  },
+  mcp_result: {
+    minIntervalMs: 10 * 60_000,
+    quietHoursRespected: true,
+    defaultEnabled: true,
+  },
+  nudge: {
+    minIntervalMs: 60 * 60_000,
+    quietHoursRespected: true,
+    defaultEnabled: true,
+  },
+  lead_alert: {
+    minIntervalMs: 30 * 60_000,
+    quietHoursRespected: true,
+    defaultEnabled: true,
+  },
+  life_insight: {
+    minIntervalMs: 24 * 3600_000,
+    quietHoursRespected: false,
+    defaultEnabled: true,
+  },
+  custom: {
+    minIntervalMs: 0,
+    quietHoursRespected: false,
+    defaultEnabled: true,
+  },
 };
 
 /** Default quiet hours (IST 22:00 – 07:00). User can override in preferences. */
 const DEFAULT_QUIET_START = 22; // 10 PM
-const DEFAULT_QUIET_END   = 7;  // 7 AM
+const DEFAULT_QUIET_END = 7; // 7 AM
 
 // In-memory per-type cooldown tracker  { `${userId}:${type}` → lastSentMs }
 const lastSentMap = new Map();
@@ -63,7 +91,7 @@ const lastSentMap = new Map();
  * @returns {Promise<{ sent: boolean, reason?: string }>}
  */
 export async function sendSmartNotification({
-  type = 'custom',
+  type = "custom",
   userId,
   token,
   title,
@@ -82,7 +110,7 @@ export async function sendSmartNotification({
       try {
         const { rows } = await query(
           `SELECT fcm_token, preferences FROM users WHERE id = $1 LIMIT 1`,
-          [userId]
+          [userId],
         );
         if (rows.length) {
           fcmToken = fcmToken || rows[0].fcm_token;
@@ -103,13 +131,14 @@ export async function sendSmartNotification({
     // ── 3. Quiet hours check ──────────────────────────────────────────────────
     if (rule.quietHoursRespected) {
       const quietStart = userPrefs?.quiet_hour_start ?? DEFAULT_QUIET_START;
-      const quietEnd   = userPrefs?.quiet_hour_end   ?? DEFAULT_QUIET_END;
-      const nowHour    = new Date().getHours();
-      const inQuiet = quietStart > quietEnd
-        ? (nowHour >= quietStart || nowHour < quietEnd)   // overnight range e.g. 22–7
-        : (nowHour >= quietStart && nowHour < quietEnd);  // same-day range
+      const quietEnd = userPrefs?.quiet_hour_end ?? DEFAULT_QUIET_END;
+      const nowHour = new Date().getHours();
+      const inQuiet =
+        quietStart > quietEnd
+          ? nowHour >= quietStart || nowHour < quietEnd // overnight range e.g. 22–7
+          : nowHour >= quietStart && nowHour < quietEnd; // same-day range
       if (inQuiet) {
-        return { sent: false, reason: 'quiet_hours' };
+        return { sent: false, reason: "quiet_hours" };
       }
     }
 
@@ -117,7 +146,7 @@ export async function sendSmartNotification({
     if (rule.minIntervalMs > 0 && userId) {
       const key = `${userId}:${type}`;
       const lastSent = lastSentMap.get(key) ?? 0;
-      const elapsed  = Date.now() - lastSent;
+      const elapsed = Date.now() - lastSent;
       if (elapsed < rule.minIntervalMs) {
         const waitMins = Math.round((rule.minIntervalMs - elapsed) / 60_000);
         return { sent: false, reason: `cooldown:${waitMins}min_remaining` };
@@ -129,7 +158,7 @@ export async function sendSmartNotification({
 
     // WebSocket (for active sessions in the app)
     if (!pushOnly) {
-      broadcast('notification', { type, title, body, ...data });
+      broadcast("notification", { type, title, body, ...data });
     }
 
     // FCM push (for background / locked screen)
@@ -140,7 +169,9 @@ export async function sendSmartNotification({
       });
     } else if (!wsOnly) {
       // No token yet — log for debugging
-      console.warn(`[NotifHelper] No FCM token for user ${userId ?? '?'}, type=${type}. WebSocket only.`);
+      console.warn(
+        `[NotifHelper] No FCM token for user ${userId ?? "?"}, type=${type}. WebSocket only.`,
+      );
     }
 
     // Update cooldown tracker
@@ -148,10 +179,12 @@ export async function sendSmartNotification({
       lastSentMap.set(`${userId}:${type}`, Date.now());
     }
 
-    console.log(`🔔 [NotifHelper] Sent [${type}] → "${title}" (push=${pushSent}, ws=true)`);
+    console.log(
+      `🔔 [NotifHelper] Sent [${type}] → "${title}" (push=${pushSent}, ws=true)`,
+    );
     return { sent: true };
   } catch (err) {
-    console.error('[NotifHelper] Error dispatching notification:', err.message);
+    console.error("[NotifHelper] Error dispatching notification:", err.message);
     return { sent: false, reason: err.message };
   }
 }
@@ -159,55 +192,74 @@ export async function sendSmartNotification({
 // ─── Convenience wrappers ─────────────────────────────────────────────────────
 
 /** Meeting alert — always goes through (no quiet hour guard) */
-export const notifyMeetingAlert = ({ userId, token, eventSummary, minutesUntil, eventId }) =>
+export const notifyMeetingAlert = ({
+  userId,
+  token,
+  eventSummary,
+  minutesUntil,
+  eventId,
+}) =>
   sendSmartNotification({
-    type:  'meeting_alert',
-    userId, token,
-    title: '📅 Anya Alert',
-    body:  `"${eventSummary}" starts in ${minutesUntil} minute${minutesUntil === 1 ? '' : 's'}.`,
-    data:  { event_id: String(eventId ?? ''), minutes_until: String(minutesUntil) },
+    type: "meeting_alert",
+    userId,
+    token,
+    title: "📅 Anya Alert",
+    body: `"${eventSummary}" starts in ${minutesUntil} minute${minutesUntil === 1 ? "" : "s"}.`,
+    data: {
+      event_id: String(eventId ?? ""),
+      minutes_until: String(minutesUntil),
+    },
   });
 
 /** MCP tool call returned something actionable (e.g. nearby places, book recommendation) */
 export const notifyMcpResult = ({ userId, token, tool, summary }) =>
   sendSmartNotification({
-    type:  'mcp_result',
-    userId, token,
+    type: "mcp_result",
+    userId,
+    token,
     title: `🛠️ Anya: ${tool}`,
-    body:  summary,
-    data:  { mcp_tool: tool },
+    body: summary,
+    data: { mcp_tool: tool },
   });
 
 /** New lead found by the lead pipeline */
 export const notifyLeadAlert = ({ userId, token, leadTitle, source }) =>
   sendSmartNotification({
-    type:  'lead_alert',
-    userId, token,
-    title: '🚀 New Opportunity Found!',
-    body:  `${leadTitle} — via ${source}`,
-    data:  { source },
+    type: "lead_alert",
+    userId,
+    token,
+    title: "🚀 New Opportunity Found!",
+    body: `${leadTitle} — via ${source}`,
+    data: { source },
   });
 
 /** Life insight was extracted from chat cleanup (daily 2 AM job) */
-export const notifyLifeInsight = ({ userId, token, emotionalState, topStruggle }) =>
+export const notifyLifeInsight = ({
+  userId,
+  token,
+  emotionalState,
+  topStruggle,
+}) =>
   sendSmartNotification({
-    type:  'life_insight',
-    userId, token,
-    title: '🧠 Anya Life Update',
-    body:  `You seem ${emotionalState}. Focus area: ${topStruggle}`,
-    data:  { emotional_state: emotionalState },
+    type: "life_insight",
+    userId,
+    token,
+    title: "🧠 Anya Life Update",
+    body: `You seem ${emotionalState}. Focus area: ${topStruggle}`,
+    data: { emotional_state: emotionalState },
   });
 
 /** Nudge scheduler — respects quiet hours + daily nudge limit */
 export const notifyNudge = ({ userId, token, message, category }) =>
   sendSmartNotification({
-    type:  'nudge',
-    userId, token,
-    title: '💡 Anya Nudge',
-    body:  message,
-    data:  { category },
+    type: "nudge",
+    userId,
+    token,
+    title: "💡 Anya Nudge",
+    body: message,
+    data: { category },
   });
 
 /** Fully custom — use from anywhere */
 export const notifyCustom = ({ userId, token, title, body, data }) =>
-  sendSmartNotification({ type: 'custom', userId, token, title, body, data });
+  sendSmartNotification({ type: "custom", userId, token, title, body, data });

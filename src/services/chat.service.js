@@ -291,6 +291,39 @@ export async function sendMessage(userId, sessionId, content) {
           latency_ms: latency,
         },
       );
+    } else if (intentResult.action === "device_command") {
+      const bgPrompt = `\n\n[SYSTEM ACTION]: You are executing a device command. Details:
+- Command: ${intentResult.command}
+- Song/Query: ${intentResult.query || 'None'}
+- Package Name: ${intentResult.packageName || 'None'}
+- URL: ${intentResult.url || 'None'}
+
+[INSTRUCTION]: Tell the user in your normal, warm, and friendly voice (as Anya) that you are opening or playing this for them. Keep it natural, under 2 sentences, and sound enthusiastic! Do NOT mention JSON or backend commands.`;
+
+      const aiResponse = await callAI(userId, history, content, bgPrompt);
+      const text = aiResponse.text;
+      const latency = Date.now() - start;
+      const msg = await saveMessage(
+        client,
+        sessionId,
+        userId,
+        "assistant",
+        text,
+        {
+          model: aiResponse.model,
+          provider: aiResponse.provider,
+          latency_ms: latency,
+        }
+      );
+      return {
+        ...msg,
+        deviceCommand: {
+          command: intentResult.command,
+          query: intentResult.query,
+          packageName: intentResult.packageName,
+          url: intentResult.url
+        }
+      };
     } else if (
       intentResult.action === "mixed_results" ||
       intentResult.action === "application_pending"
@@ -446,6 +479,33 @@ export async function streamMessage(ws, userId, sessionId, content) {
         is_streamed: true,
       });
       send("done", { latency_ms: latency, provider: "groq" });
+      return;
+    } else if (intentResult.action === "device_command") {
+      const bgPrompt = `\n\n[SYSTEM ACTION]: You are executing a device command. Details:
+- Command: ${intentResult.command}
+- Song/Query: ${intentResult.query || 'None'}
+- Package Name: ${intentResult.packageName || 'None'}
+- URL: ${intentResult.url || 'None'}
+
+[INSTRUCTION]: Tell the user in your normal, warm, and friendly voice (as Anya) that you are opening or playing this for them. Keep it natural, under 2 sentences, and sound enthusiastic! Do NOT mention JSON or backend commands.`;
+
+      const aiResponse = await callAI(userId, history, content, bgPrompt);
+      const text = aiResponse.text;
+      send("chunk", { text });
+      const latency = Date.now() - start;
+      await saveMessage(client, sessionId, userId, "assistant", text, {
+        provider: aiResponse.provider,
+        model: aiResponse.model,
+        latency_ms: latency,
+        is_streamed: true,
+      });
+      send("device_command", {
+        command: intentResult.command,
+        query: intentResult.query,
+        packageName: intentResult.packageName,
+        url: intentResult.url
+      });
+      send("done", { latency_ms: latency, provider: aiResponse.provider });
       return;
     } else if (
       intentResult.action === "mixed_results" ||
