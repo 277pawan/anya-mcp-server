@@ -10,12 +10,18 @@ dotenv.config({ path: join(__dirname, '../../.env') });
 
 const { Pool } = pg;
 
+const connectionString = process.env.DATABASE_URL;
+
 const pool = new Pool({
-  host:     process.env.DB_HOST     || 'localhost',
-  port:     parseInt(process.env.DB_PORT || '5432', 10),
-  database: process.env.DB_NAME     || 'anya_db',
-  user:     process.env.DB_USER     || 'postgres',
-  password: String(process.env.DB_PASSWORD ?? ''),  // must be a string, never undefined
+  connectionString,
+  host:     connectionString ? undefined : (process.env.DB_HOST || 'localhost'),
+  port:     connectionString ? undefined : parseInt(process.env.DB_PORT || '5432', 10),
+  database: connectionString ? undefined : (process.env.DB_NAME || 'anya_db'),
+  user:     connectionString ? undefined : (process.env.DB_USER || 'postgres'),
+  password: connectionString ? undefined : String(process.env.DB_PASSWORD ?? ''),
+  ssl:      process.env.DB_SSL === 'true' || (connectionString && !connectionString.includes('localhost') && !connectionString.includes('127.0.0.1'))
+    ? { rejectUnauthorized: false }
+    : false,
   max:      20,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,
