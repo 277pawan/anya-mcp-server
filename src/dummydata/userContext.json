@@ -1,0 +1,480 @@
+{
+  "profile": {
+    "name": "Pawan Bisht",
+    "email": "bpawan277@gmail.com",
+    "contact": "9068509220",
+    "github": "https://github.com/277pawan",
+    "linkedin": "https://linkedin.com/in/pawan-bisht",
+    "timezone": "Asia/Kolkata",
+    "location": "India",
+    "availability": "Open to opportunities",
+    "preferredWorkTypes": [
+      "remote",
+      "contract",
+      "freelance",
+      "full-time"
+    ],
+    "education": {
+      "degree": "Bachelor of Technology in Computer Science and Engineering",
+      "university": "Uttaranchal University",
+      "year": "2020-2024",
+      "cgpa": 8.7
+    },
+    "experience": [
+      {
+        "company": "Predigle",
+        "role": "Software Engineer L3",
+        "duration": "July 2025 – Nov 2025",
+        "highlights": [
+          "Micro-architecture with Angular",
+          "Component design and maintainable frontend structure",
+          "Contributed to Pandora and Espershield projects",
+          "AngularJS and micro-frontend architecture",
+          "Integrated Python APIs for multiple functionalities"
+        ]
+      },
+      {
+        "company": "Rubico IT Private Limited",
+        "role": "Associate Software Engineer",
+        "duration": "Feb 2024 – June 2025",
+        "highlights": [
+          "Built robust APIs using SQL transactions and locks for data integrity",
+          "Pixel manipulation and Pixel Maker development",
+          "MQTT/Long Polling real-time communication",
+          "Collaborated on 10+ real-time projects",
+          "Improved scalability and maintainability across diverse teams",
+          "Developed scalable and intuitive UI components",
+          "Implemented reusable and modular code structures"
+        ]
+      },
+      {
+        "company": "Contract",
+        "role": "Contract Software Developer",
+        "duration": "Dec 2024 – Jan 2025",
+        "highlights": [
+          "React front-end components",
+          "Node.js backend APIs for project-based deliverables"
+        ]
+      }
+    ],
+    "projects": [
+      {
+        "name": "React-Form-Toaster",
+        "type": "NPM Library",
+        "description": "A React form library with dynamic form creation and advanced validation",
+        "highlights": [
+          "Easy setup in less than 10 seconds",
+          "Advanced validation with Zod",
+          "TypeScript support",
+          "Dynamic form generation from field definitions",
+          "Pre-styled components with full customization"
+        ]
+      },
+      {
+        "name": "Anya AI",
+        "type": "Personal AI Assistant",
+        "description": "MCP-based personal AI with calendar, maps, books, and life engine integrations",
+        "highlights": [
+          "MCP servers: Calendar, Maps, Books",
+          "Life Engine for personal growth nudges",
+          "Push notification system",
+          "AI-powered prompt refinement"
+        ]
+      }
+    ],
+    "skills": {
+      "languages": [
+        "TypeScript",
+        "JavaScript",
+        "Python",
+        "HTML"
+      ],
+      "frameworks": [
+        "React",
+        "Next.js",
+        "Node.js",
+        "Express.js",
+        "Nest.js",
+        "Angular",
+        "AngularJS",
+        "Framer",
+        "GSAP",
+        "Tailwind CSS"
+      ],
+      "databases": [
+        "MySQL",
+        "PostgreSQL",
+        "Firebase",
+        "MongoDB"
+      ],
+      "cloud": [
+        "Docker",
+        "AWS S3",
+        "API Gateway",
+        "GitHub"
+      ],
+      "ai_tools": [
+        "ChatGPT",
+        "Gemini",
+        "GitHub Copilot",
+        "Grok",
+        "Claude"
+      ],
+      "protocols": [
+        "MCP",
+        "MQTT",
+        "REST",
+        "Long Polling"
+      ],
+      "other": [
+        "Zod",
+        "SQL Transactions",
+        "Micro-frontend Architecture",
+        "Pixel Manipulation"
+      ]
+    },
+    "courses": [
+      "JavaScript Certification – Udemy",
+      "CAD Certification – ServiceNow",
+      "System Design Masterclass – Arpit Bhayani"
+    ],
+    "hourlyRate": {
+      "min": 50,
+      "max": 100,
+      "currency": "USD"
+    },
+    "preferredJobTypes": [
+      "contract",
+      "freelance",
+      "full-time"
+    ],
+    "preferredLocations": [
+      "remote",
+      "India",
+      "USA",
+      "Europe"
+    ],
+    "industries": [
+      "tech",
+      "fintech",
+      "AI/ML",
+      "healthcare",
+      "SaaS"
+    ]
+  },
+  "preferences": {
+    "autoApplyThreshold": 70,
+    "maxApplicationsPerDay": 10,
+    "excludedCompanies": [],
+    "technologies": [
+      "React",
+      "Node.js",
+      "TypeScript",
+      "Angular",
+      "Next.js",
+      "PostgreSQL",
+      "MongoDB"
+    ],
+    "notifications": {
+      "pushEnabled": true,
+      "quietHours": {
+        "start": "23:00",
+        "end": "06:00"
+      },
+      "preferredNudgeFrequency": "every 90 minutes",
+      "maxNudgesPerDay": 10
+    }
+  },
+  "lifeEngine": {
+    "streak": 12,
+    "longestStreak": 12,
+    "streakStartDate": null,
+    "lastActiveDate": null,
+    "currentMood": 4,
+    "moodHistory": [],
+    "lastNudgeDate": null,
+    "lastNudgeCategory": null,
+    "nudgeSchedule": {
+      "morning": {
+        "time": "07:00",
+        "categories": [
+          "mind",
+          "motivation",
+          "business"
+        ],
+        "description": "Cortisol peak — best for mindset fuel and big thinking"
+      },
+      "midMorning": {
+        "time": "10:00",
+        "categories": [
+          "tech",
+          "innovation",
+          "body"
+        ],
+        "description": "Focus window — ideas and deep work fuel"
+      },
+      "afternoon": {
+        "time": "13:30",
+        "categories": [
+          "health",
+          "hydration",
+          "movement"
+        ],
+        "description": "Post-lunch dip — hydration and body nudges"
+      },
+      "lateAfternoon": {
+        "time": "16:00",
+        "categories": [
+          "business",
+          "motivation",
+          "mindset"
+        ],
+        "description": "Second wind — push through the day strong"
+      },
+      "evening": {
+        "time": "19:00",
+        "categories": [
+          "reflection",
+          "learning",
+          "mind"
+        ],
+        "description": "Wind-down — reflect and absorb"
+      },
+      "night": {
+        "time": "21:30",
+        "categories": [
+          "health",
+          "body",
+          "sleep"
+        ],
+        "description": "Recovery prep — body and sleep reminders"
+      }
+    },
+    "nudgeCategories": {
+      "health": {
+        "enabled": true,
+        "weight": 3,
+        "themes": [
+          "hydration",
+          "nutrition",
+          "protein",
+          "vitamins",
+          "gut health",
+          "immune system"
+        ]
+      },
+      "mind": {
+        "enabled": true,
+        "weight": 3,
+        "themes": [
+          "deep question",
+          "philosophy",
+          "mental clarity",
+          "focus",
+          "neuroplasticity",
+          "meditation"
+        ]
+      },
+      "business": {
+        "enabled": true,
+        "weight": 3,
+        "themes": [
+          "mindset",
+          "strategy",
+          "entrepreneurship",
+          "productivity",
+          "wealth",
+          "leadership"
+        ]
+      },
+      "tech": {
+        "enabled": true,
+        "weight": 2,
+        "themes": [
+          "AI innovations",
+          "software trends",
+          "engineering insights",
+          "tools",
+          "future of tech"
+        ]
+      },
+      "body": {
+        "enabled": true,
+        "weight": 2,
+        "themes": [
+          "posture",
+          "breathing",
+          "stretching",
+          "movement",
+          "recovery",
+          "sleep quality"
+        ]
+      },
+      "motivation": {
+        "enabled": true,
+        "weight": 3,
+        "themes": [
+          "daily boost",
+          "quote",
+          "story",
+          "identity",
+          "discipline",
+          "consistency"
+        ]
+      },
+      "innovation": {
+        "enabled": true,
+        "weight": 2,
+        "themes": [
+          "creative thinking",
+          "lateral thinking",
+          "problem solving",
+          "big ideas",
+          "curiosity"
+        ]
+      },
+      "reflection": {
+        "enabled": true,
+        "weight": 1,
+        "themes": [
+          "daily review",
+          "gratitude",
+          "lessons",
+          "growth",
+          "self-awareness"
+        ]
+      }
+    },
+    "dailyQuestion": {
+      "enabled": true,
+      "time": "07:30",
+      "lastQuestion": null,
+      "lastQuestionDate": null
+    },
+    "weeklyReport": {
+      "enabled": true,
+      "day": "Sunday",
+      "time": "09:00",
+      "lastReportDate": null
+    },
+    "receivedNudges": [
+      {
+        "category": "health",
+        "timestamp": 1779003460181,
+        "theme": "hydration",
+        "message": null,
+        "engaged": null
+      },
+      {
+        "category": "Tech",
+        "timestamp": 1779004407400,
+        "theme": "normal"
+      },
+      {
+        "category": "Body",
+        "timestamp": 1779011926759,
+        "theme": "normal"
+      },
+      {
+        "category": "Health",
+        "timestamp": 1779012415809,
+        "theme": "normal"
+      },
+      {
+        "category": "Mind",
+        "timestamp": 1779026111334,
+        "theme": "normal"
+      },
+      {
+        "category": "Business",
+        "timestamp": 1779026234070,
+        "theme": "rabbit_hole"
+      },
+      {
+        "category": "Tech",
+        "timestamp": 1779026293274,
+        "theme": "normal"
+      },
+      {
+        "category": "Mind",
+        "timestamp": 1779026384110,
+        "theme": "rabbit_hole"
+      },
+      {
+        "category": "Business",
+        "timestamp": 1779026407421,
+        "theme": "normal"
+      }
+    ],
+    "weeklyStats": {
+      "health": 4,
+      "mind": 3,
+      "business": 5,
+      "tech": 2,
+      "body": 2,
+      "motivation": 0,
+      "innovation": 0,
+      "reflection": 0
+    },
+    "totalNudgesSent": 8,
+    "totalNudgesEngaged": 0,
+    "engagementRate": 0,
+    "personalGoals": [
+      {
+        "id": "goal_1",
+        "title": "Build Anya AI to production",
+        "category": "business",
+        "active": true,
+        "createdAt": null
+      },
+      {
+        "id": "goal_2",
+        "title": "Stay consistently hydrated — 3L/day",
+        "category": "health",
+        "active": true,
+        "createdAt": null
+      },
+      {
+        "id": "goal_3",
+        "title": "Read or learn something new in tech daily",
+        "category": "tech",
+        "active": true,
+        "createdAt": null
+      },
+      {
+        "id": "goal_4",
+        "title": "Develop strong business mindset",
+        "category": "business",
+        "active": true,
+        "createdAt": null
+      }
+    ],
+    "userTraits": {
+      "isBuilder": true,
+      "isTechEnthusiast": true,
+      "isGrowthMinded": true,
+      "prefersTechnicalContent": true,
+      "prefersActionableNudges": true,
+      "respondsBestTo": [
+        "direct",
+        "bold",
+        "thought-provoking"
+      ],
+      "avoids": [
+        "generic quotes",
+        "repetitive content"
+      ]
+    },
+    "anyaVoice": {
+      "tone": "direct, warm, intelligent",
+      "style": "like a brilliant friend who pushes you to be better",
+      "usesName": true,
+      "personalityTraits": [
+        "bold",
+        "caring",
+        "insightful",
+        "no-nonsense"
+      ]
+    }
+  }
+}

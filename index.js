@@ -1,161 +1,347 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+// index.js — Anya MCP Server — Main Entry Point
 import dotenv from "dotenv";
-import { google } from "googleapis";
-import { z } from "zod";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
 
-dotenv.config();
+// Load .env from project root with explicit path
+const __dirname = dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: join(__dirname, ".env") });
 
-const timeZone = "Asia/Kolkata";
-const BASEURL = "https://maps.googleapis.com/maps/api";
+import express from "express";
+import { createServer } from "http";
+import { WebSocketServer } from "ws";
+import { URL } from "url";
 
-const server = new McpServer({
-  name: "pawan-calendar",
-  version: "1.0.0",
+// Routes barrel — all API routes in one import
+import { registerRoutes } from "./src/routes/index.js";
+
+// WebSocket streaming service
+import { streamMessage } from "./src/services/chat.service.js";
+
+// MCP servers + test utilities
+import {
+  initAllMCPServers,
+  shutdownMCP,
+  getCalendar,
+  searchNearbyPlaces,
+  geocode,
+  searchBooks,
+} from "./src/mcp/mcp-client.js";
+import { routeUserMessage } from "./src/ai-intent/ai-intent-router.js";
+import { findLeadsForProposal } from "./src/search/leadPipeline.js";
+import { addClient, removeClient } from "./src/services/ws-registry.js";
+import { startLifeEngine } from "./src/services/life-engine.service.js";
+
+const app = express();
+const PORT = parseInt(process.env.PORT || "3000", 10);
+
+// ---------------------------------------------------------------------------
+// Middleware
+// ---------------------------------------------------------------------------
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true }));
+
+// CORS
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", process.env.CORS_ORIGIN || "*");
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+  );
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type,Authorization,X-User-Id",
+  );
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
 });
 
-//  Pure JS — zero date-fns, zero format strings, zero 'n' token risk
-function getDayBoundsInIST(dateStr) {
-  // Build midnight IST for the given date using Temporal-style trick
-  const [year, month, day] = new Date(dateStr)
-    .toLocaleDateString("en-CA", { timeZone }) // gives "YYYY-MM-DD" in IST
-    .split("-")
-    .map(Number);
+// Inject userId — from header or DEFAULT_USER_ID env (single-user setup)
+app.use((req, _res, next) => {
+  req.userId = req.headers["x-user-id"] || process.env.DEFAULT_USER_ID;
+  next();
+});
 
-  // Midnight IST = UTC-5:30 offset, so add 330 minutes worth of ms back
-  const ISTOffsetMs = 5.5 * 60 * 60 * 1000;
-
-  const startUTC = new Date(Date.UTC(year, month - 1, day) - ISTOffsetMs);
-  const endUTC = new Date(startUTC.getTime() + 24 * 60 * 60 * 1000);
-
-  return {
-    timeMin: startUTC.toISOString(),
-    timeMax: endUTC.toISOString(),
-  };
-}
-
-//  Safe display formatter — no date-fns, no format tokens
-function formatISTDisplay(dateTimeStr) {
-  return new Date(dateTimeStr).toLocaleString("en-IN", {
-    timeZone,
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
+// ---------------------------------------------------------------------------
+// Health
+// ---------------------------------------------------------------------------
+app.get("/health", (_req, res) => {
+  res.json({
+    status: "ok",
+    time: new Date().toISOString(),
+    service: "anya-mcp-server",
   });
-}
+});
 
-async function getMyCalendarDataByDate(date) {
-  const calendar = google.calendar({
-    version: "v3",
-    auth: process.env.GOOGLE_PUBLIC_API_KEY,
-  });
+// ---------------------------------------------------------------------------
+// Debug Utilities (dev only — no auth guard needed for single-user Anya)
+// ---------------------------------------------------------------------------
+import cron from "node-cron";
 
-  const { timeMin, timeMax } = getDayBoundsInIST(date);
-
+/** GET /debug/cron-status — list all scheduled cron tasks and their state */
+app.get("/debug/cron-status", (_req, res) => {
   try {
-    const res = await calendar.events.list({
-      calendarId: process.env.CALENDAR_ID,
-      timeMin,
-      timeMax,
-      timeZone: "Asia/Kolkata",
-      maxResults: 10,
-      singleEvents: true,
-      orderBy: "startTime",
+    const tasks = cron.getTasks(); // Map<taskId, ScheduledTask> — node-cron v4
+    const taskList = [];
+    tasks.forEach((task, _key) => {
+      taskList.push({
+        id: task.id,
+        name: task.name,
+        expression: task.cronExpression,
+        timezone: task.timezone ?? "system",
+        state: task.stateMachine?.state ?? "unknown",
+      });
     });
+    res.json({
+      cronLibrary: "node-cron",
+      version: "4.x",
+      scheduledTaskCount: taskList.length,
+      tasks: taskList,
+      scheduleInfo: {
+        lifeEngine: "every 30 minutes  →  */30 * * * *",
+        chatCleanup: "daily at 02:00 AM →  0 2 * * *",
+      },
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
-    const events = res.data.items || [];
+/** POST /debug/fire-notification — manually fire a test notification */
+app.post("/debug/fire-notification", async (req, res) => {
+  try {
+    const { sendSmartNotification } =
+      await import("./src/utils/notificationHelper.js");
+    const {
+      type = "custom",
+      title = "Anya Test 🔔",
+      body = "This is a test notification from Anya!",
+      token,
+    } = req.body;
+    const userId = req.userId || "89968338-6678-48e0-be01-f8472e550e1d";
+    const result = await sendSmartNotification({
+      type,
+      userId,
+      token,
+      title,
+      body,
+    });
+    res.json({ ok: true, result });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
-    if (events.length === 0) {
-      return { meetings: [], message: "No meetings found for this date." };
+// ---------------------------------------------------------------------------
+// API Routes
+// ---------------------------------------------------------------------------
+registerRoutes(app);
+
+// 404 fallback
+app.use((_req, res) => res.status(404).json({ error: "Route not found" }));
+
+// ---------------------------------------------------------------------------
+// HTTP Server (shared with WebSocket)
+// ---------------------------------------------------------------------------
+const server = createServer(app);
+
+// Disable all timeouts — required for WebSocket + streaming
+server.keepAliveTimeout = 0;
+server.headersTimeout = 0;
+server.timeout = 0;
+
+// ---------------------------------------------------------------------------
+// WebSocket — ws://localhost:PORT/ws/chat/:sessionId
+// ---------------------------------------------------------------------------
+const wss = new WebSocketServer({ noServer: true });
+
+// Heartbeat ping every 30s to keep long-lived connections alive
+const pingInterval = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) return ws.terminate();
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30_000);
+
+wss.on("close", () => clearInterval(pingInterval));
+
+wss.on("connection", (ws, _req, { sessionId, userId }) => {
+  ws.isAlive = true;
+  ws.on("pong", () => {
+    ws.isAlive = true;
+  });
+
+  addClient(sessionId, ws);
+
+  console.log(`[WS] connected — session: ${sessionId}`);
+  ws.send(JSON.stringify({ event: "connected", sessionId }));
+
+  ws.on("close", () => {
+    ws.isCancelled = true;
+    removeClient(sessionId);
+    console.log(`[WS] disconnected — session: ${sessionId}`);
+  });
+
+  ws.on("message", async (rawData) => {
+    try {
+      const msg = JSON.parse(rawData.toString());
+      if (msg.event === "cancel") {
+        console.log(`[WS] Received cancel request for session: ${sessionId}`);
+        ws.isCancelled = true;
+        return;
+      }
+      const { content } = msg;
+      if (!content?.trim()) {
+        return ws.send(
+          JSON.stringify({ event: "error", message: "content is required" }),
+        );
+      }
+      // Reset cancel state for new generation
+      ws.isCancelled = false;
+      // Stream AI response — no timeout, event-driven chunks
+      await streamMessage(ws, userId, sessionId, content.trim());
+    } catch (err) {
+      console.error("[WS] error:", err);
+      if (ws.readyState === 1) {
+        ws.send(JSON.stringify({ event: "error", message: err.message }));
+      }
     }
+  });
 
-    const meetings = events.map((event) => {
-      const rawStart = event.start.dateTime || event.start.date;
-      const display = formatISTDisplay(rawStart);
-      return `${event.summary} at ${display}`;
+  ws.on("error", (err) => console.error("[WS] socket error:", err));
+});
+
+// Upgrade HTTP → WebSocket only for /ws/chat/:sessionId
+server.on("upgrade", (req, socket, head) => {
+  const pathname = new URL(req.url, `http://${req.headers.host}`).pathname;
+  const match = pathname.match(/^\/ws\/chat\/([a-f0-9-]+)$/i);
+  if (!match) return socket.destroy();
+
+  const sessionId = match[1];
+  const userId =
+    req.headers["x-user-id"] ||
+    new URL(req.url, `http://${req.headers.host}`).searchParams.get("userId") ||
+    process.env.DEFAULT_USER_ID;
+
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.emit("connection", ws, req, { sessionId, userId });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Graceful shutdown
+// ---------------------------------------------------------------------------
+async function shutdown(signal) {
+  console.log(`\n[${signal}] Shutting down gracefully...`);
+  clearInterval(pingInterval);
+  wss.clients.forEach((ws) => ws.close(1001, "Server shutting down"));
+  server.close(() => {
+    console.log("HTTP server closed");
+    shutdownMCP();
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(1), 10_000);
+}
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+// ---------------------------------------------------------------------------
+// DEV UTILITIES — uncomment calls inside boot() to test individual systems
+// ---------------------------------------------------------------------------
+
+async function testCalendarMCP() {
+  console.log("\n" + "=".repeat(60));
+  console.log("TEST: Calendar MCP Direct Call\n");
+  const today = new Date().toISOString().split("T")[0];
+  const calendarData = await getCalendar(today);
+  console.log("Calendar Data:", JSON.stringify(calendarData, null, 2));
+}
+
+async function testMapsMCP() {
+  console.log("\n" + "=".repeat(60));
+  console.log("TEST: Maps MCP Direct Call\n");
+  const geoResult = await geocode("Connaught Place, New Delhi");
+  console.log("Geocode Result:", JSON.stringify(geoResult, null, 2));
+  const placesResult = await searchNearbyPlaces(
+    "Connaught Place, New Delhi",
+    2000,
+    "hospital",
+  );
+  console.log("Places Result:", JSON.stringify(placesResult, null, 2));
+}
+
+async function testBooksMCP() {
+  console.log("\n" + "=".repeat(60));
+  console.log("TEST: Books MCP Direct Call\n");
+  const booksResult = await searchBooks("system design", 5);
+  console.log("Books Result:", JSON.stringify(booksResult, null, 2));
+}
+
+async function testAIRouter() {
+  console.log("\n" + "=".repeat(60));
+  console.log("TEST: AI Router with MCP Integration\n");
+  const testCases = [
+    "hey what is your name?",
+    "find hospitals near Connaught Place",
+  ];
+  for (const testCase of testCases) {
+    console.log(`\nInput: "${testCase}"`);
+    const result = await routeUserMessage(testCase);
+    console.log("Result:", JSON.stringify(result, null, 2));
+  }
+}
+
+async function testLeadPipeline() {
+  console.log("\n" + "=".repeat(60));
+  console.log("TEST: Lead Pipeline\n");
+  const query = "search freelancing jobs for me in web development";
+  console.log(`Query: "${query}"`);
+  const result = await routeUserMessage(query);
+  console.log("Result:", JSON.stringify(result, null, 2));
+}
+
+// ---------------------------------------------------------------------------
+// Boot
+// ---------------------------------------------------------------------------
+async function boot() {
+  try {
+    console.log("Initializing MCP servers...");
+    await initAllMCPServers();
+    // await testAIRouter()
+    // await testLeadPipeline()
+    console.log("MCP servers ready\n");
+
+    console.log("Starting Life Engine...");
+    startLifeEngine();
+    console.log("Life Engine started\n");
+
+    server.listen(PORT, () => {
+      console.log(`Anya API Server   → http://localhost:${PORT}`);
+      console.log(
+        `WebSocket         → ws://localhost:${PORT}/ws/chat/:sessionId`,
+      );
+      console.log(`Health            → http://localhost:${PORT}/health\n`);
+      console.log("Routes:");
+      console.log(
+        "  GET/PUT  /api/user/profile | /skills | /goals | /preferences",
+      );
+      console.log(
+        "  CRUD     /api/chat/session(s)  |  POST /message  |  WS /ws/chat/:id",
+      );
+      console.log(
+        "  GET/PUT  /api/life-engine/state | /streak | /mood | /stats/*",
+      );
+      console.log("  CRUD     /api/nudges  |  /categories  |  /schedule");
+      console.log(
+        "  GET      /api/history/mcp-calls | /ai-calls | /leads | /notifications\n",
+      );
     });
-
-    return { meetings };
   } catch (err) {
-    return { error: err.message };
+    console.error("Boot failed:", err);
+    process.exit(1);
   }
 }
 
-server.tool(
-  "getMyCalendarDataByDate",
-  {
-    date: z.string().refine((val) => !isNaN(Date.parse(val)), {
-      message: "Invalid date format. Please provide a valid date string.",
-    }),
-  },
-  async ({ date }) => {
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(await getMyCalendarDataByDate(date)),
-        },
-      ],
-    };
-  },
-);
-async function fetchMaps(endpoint, params) {
-  const url = new URL(`${BASEURL}/${endpoint}/json`);
-  Object.enteries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  url.searchParams.set("key", process.env.GOOGLE_MAPS_API_KEY);
-
-  const res = await fetch(url.toString());
-  const data = await res.json();
-
-  if (data.status !== "ok" && data.status !== "ZERO_RESULTS") {
-    throw new Error(
-      `Google API error: ${data.status} - ${data.error_message || ""}`,
-    );
-  }
-  return data;
-}
-
-server.tool(
-  "geocodeAddress",
-  {
-    address: z.string().describe("Address to convert to coordinates"),
-  },
-  async ({ address }) => {
-    const data = await fetchMaps("geocode", { address });
-    const result = data.results[0];
-
-    if (!result) {
-      return {
-        content: [{ type: "text", text: "No results found for this address." }],
-      };
-    }
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(
-            {
-              formatted_address: result.formatted_address,
-              lat: result.geometry.location.lat,
-              lng: result.geometry.location.lng,
-              place_id: result.place_id,
-            },
-            null,
-            2,
-          ),
-        },
-      ],
-    };
-  },
-);
-
-async function init() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-}
-
-init();
+boot();
