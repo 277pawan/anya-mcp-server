@@ -6,7 +6,7 @@ import pool from './pool.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-async function migrate() {
+export async function runMigrations() {
   const client = await pool.connect();
   try {
     // Auto-discover all *.sql files in migrations/ sorted numerically (001_, 002_, ...)
@@ -27,12 +27,22 @@ async function migrate() {
     console.error('❌ Migration failed:', err.message);
     if (err.detail) console.error('📍 Detail:', err.detail);
     if (err.hint)   console.error('💡 Hint:',   err.hint);
-    process.exit(1);
+    throw err;
   } finally {
     client.release();
-    await pool.end();
-    process.exit(0);
   }
 }
 
-migrate();
+// Run standalone if executed directly
+const nodePath = process.argv[1];
+if (nodePath && (nodePath.endsWith('migrate.js') || nodePath.endsWith('migrate'))) {
+  runMigrations()
+    .then(() => {
+      pool.end();
+      process.exit(0);
+    })
+    .catch(() => {
+      pool.end();
+      process.exit(1);
+    });
+}

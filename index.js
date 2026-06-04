@@ -31,6 +31,8 @@ import { routeUserMessage } from "./src/ai-intent/ai-intent-router.js";
 import { findLeadsForProposal } from "./src/search/leadPipeline.js";
 import { addClient, removeClient } from "./src/services/ws-registry.js";
 import { startLifeEngine } from "./src/services/life-engine.service.js";
+import { runMigrations } from "./src/db/migrate.js";
+
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "3000", 10);
@@ -307,6 +309,10 @@ async function testLeadPipeline() {
 // ---------------------------------------------------------------------------
 async function boot() {
   try {
+    console.log("Running database migrations...");
+    await runMigrations();
+    console.log("Database migrations complete!\n");
+
     console.log("Initializing MCP servers...");
     await initAllMCPServers();
     // await testAIRouter()
