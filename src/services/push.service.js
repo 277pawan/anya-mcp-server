@@ -13,17 +13,33 @@ const keyPath = path.resolve(__dirname, '../../firebase-admin-key.json');
 let isFirebaseInitialized = false;
 
 try {
-  if (fs.existsSync(keyPath)) {
-    const serviceAccount = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
-    
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount)
     });
-    
     isFirebaseInitialized = true;
-    console.log('✅ Firebase Admin SDK Initialized Successfully.');
+    console.log('✅ Firebase Admin SDK Initialized from Environment (FIREBASE_SERVICE_ACCOUNT).');
+  } else if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PROJECT_ID) {
+    const privateKey = process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n');
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: privateKey,
+      })
+    });
+    isFirebaseInitialized = true;
+    console.log('✅ Firebase Admin SDK Initialized from Environment (individual variables).');
+  } else if (fs.existsSync(keyPath)) {
+    const serviceAccount = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    isFirebaseInitialized = true;
+    console.log('✅ Firebase Admin SDK Initialized from local firebase-admin-key.json.');
   } else {
-    console.warn('⚠️ Firebase Admin SDK key not found. Push notifications will be mocked.');
+    console.warn('⚠️ Firebase Admin SDK config not found in environment or local file. Push notifications will be mocked.');
   }
 } catch (error) {
   console.error('❌ Failed to initialize Firebase Admin SDK:', error.message);
