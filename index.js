@@ -32,6 +32,8 @@ import { findLeadsForProposal } from "./src/search/leadPipeline.js";
 import { addClient, removeClient } from "./src/services/ws-registry.js";
 import { startLifeEngine } from "./src/services/life-engine.service.js";
 import { runMigrations } from "./src/db/migrate.js";
+import { runSeed } from "./src/db/seed.js";
+
 
 
 const app = express();
@@ -321,6 +323,10 @@ async function boot() {
     console.log("Running database migrations...");
     await runMigrations();
     console.log("Database migrations complete!\n");
+
+    console.log("Running database seeding...");
+    await runSeed();
+    console.log("Database seeding check complete!\n");
 
     console.log("Initializing MCP servers...");
     await initAllMCPServers();

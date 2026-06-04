@@ -12,7 +12,7 @@ const VALID_CATS = new Set([
   'health', 'mind', 'business', 'tech', 'body', 'motivation', 'innovation', 'reflection'
 ]);
 
-async function seed() {
+export async function runSeed() {
   const raw = readFileSync(join(__dirname, '../dummydata/userContext.json'), 'utf8');
   const ctx = JSON.parse(raw);
   const { profile, preferences, lifeEngine } = ctx;
@@ -23,6 +23,12 @@ async function seed() {
 
     // 1. Insert / upsert user
     const targetUserId = process.env.DEFAULT_USER_ID || '89968338-6678-48e0-be01-f8472e550e1d';
+    const checkRes = await client.query('SELECT 1 FROM users WHERE id = $1', [targetUserId]);
+    if (checkRes.rows.length > 0) {
+      console.log(`User ${targetUserId} already exists. Skipping seeding.`);
+      return;
+    }
+
     const userRes = await client.query(
       `INSERT INTO users (
          id, name, email, contact, github_url, linkedin_url, timezone, location,
@@ -198,12 +204,8 @@ async function seed() {
     console.log('   OK Weekly stats seeded');
 
     console.log('\nSeed complete!');
-    console.log('\nAdd this to your .env:');
-    console.log('DEFAULT_USER_ID=' + userId);
+    console.log('\nUser profile seeded with ID: ' + userId);
   });
-
-  await pool.end();
-  process.exit(0);
 }
 
 function getMonday(date) {
@@ -215,8 +217,18 @@ function getMonday(date) {
   return d;
 }
 
-seed().catch((err) => {
-  console.error('Seed failed:', err.message);
-  console.error(err);
-  process.exit(1);
-});
+// Run standalone if executed directly
+const nodePath = process.argv[1];
+if (nodePath && (nodePath.endsWith('seed.js') || nodePath.endsWith('seed'))) {
+  runSeed()
+    .then(() => {
+      pool.end();
+      process.exit(0);
+    })
+    .catch((err) => {
+      console.error('Seed failed:', err.message);
+      console.error(err);
+      pool.end();
+      process.exit(1);
+    });
+}
