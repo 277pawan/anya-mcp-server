@@ -22,16 +22,19 @@ async function seed() {
   await withTransaction(async (client) => {
 
     // 1. Insert / upsert user
+    const targetUserId = process.env.DEFAULT_USER_ID || '89968338-6678-48e0-be01-f8472e550e1d';
     const userRes = await client.query(
       `INSERT INTO users (
-         name, email, contact, github_url, linkedin_url, timezone, location,
+         id, name, email, contact, github_url, linkedin_url, timezone, location,
          availability, edu_degree, edu_university, edu_year, edu_cgpa,
          rate_min, rate_max, rate_currency,
          streak, longest_streak, current_mood,
          total_nudges_sent, total_nudges_engaged, preferences
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
-       ON CONFLICT (email) DO UPDATE SET
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+       ON CONFLICT (id) DO UPDATE SET
          name = EXCLUDED.name,
+         email = EXCLUDED.email,
+         contact = EXCLUDED.contact,
          streak = EXCLUDED.streak,
          longest_streak = EXCLUDED.longest_streak,
          current_mood = EXCLUDED.current_mood,
@@ -40,6 +43,7 @@ async function seed() {
          updated_at = now()
        RETURNING id`,
       [
+        targetUserId,
         profile.name, profile.email, profile.contact,
         profile.github, profile.linkedin,
         profile.timezone, profile.location, profile.availability,

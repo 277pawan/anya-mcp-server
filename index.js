@@ -137,6 +137,15 @@ app.post("/debug/fire-notification", async (req, res) => {
 // ---------------------------------------------------------------------------
 // API Routes
 // ---------------------------------------------------------------------------
+// Root status check
+app.get("/", (_req, res) => {
+  res.json({
+    status: "ok",
+    message: "Anya MCP Server is running",
+    time: new Date().toISOString(),
+  });
+});
+
 registerRoutes(app);
 
 // 404 fallback
