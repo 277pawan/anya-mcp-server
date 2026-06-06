@@ -1,4 +1,5 @@
 import { query, withTransaction } from "../db/pool.js";
+import { getClient } from "./ws-registry.js";
 import Groq from "groq-sdk";
 import { routeUserMessage } from "../ai-intent/ai-intent-router.js";
 import { getPreferences, getUserProfile } from "./user.service.js";
@@ -353,8 +354,12 @@ export async function sendMessage(userId, sessionId, content) {
 // WebSocket streaming
 // ---------------------------------------------------------------------------
 export async function streamMessage(ws, userId, sessionId, content) {
+  // Always route through the live registry socket so background tasks survive WS reconnects
   const send = (event, data) => {
-    if (ws.readyState === 1) ws.send(JSON.stringify({ event, ...data }));
+    const liveWs = getClient(sessionId) || ws;
+    if (liveWs && liveWs.readyState === 1) {
+      liveWs.send(JSON.stringify({ event, ...data }));
+    }
   };
 
   await withTransaction(async (client) => {
