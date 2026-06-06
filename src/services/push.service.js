@@ -65,26 +65,20 @@ export async function sendPushNotification(token, title, body, data = {}) {
       ...(data.image_url ? { imageUrl: data.image_url } : {})
     },
     android: {
+      priority: 'high',
       notification: {
         channelId: 'default_notification_channel',
         sound: 'default',
-        priority: 'high',
         ...(data.image_url ? { imageUrl: data.image_url } : {}),
-        ...(data.url ? {
-          clickAction: 'FLUTTER_NOTIFICATION_CLICK',
-          actions: [
-            {
-              action: 'open_url',
-              title: data.url_title ? `Open ${data.url_title}` : 'Open Link',
-            }
-          ]
-        } : {})
-      }
+        ...(data.url ? { clickAction: 'OPEN_URL' } : {}),
+      },
     },
-    data: {
-      click_action: 'FLUTTER_NOTIFICATION_CLICK',
-      ...data
-    },
+    data: Object.fromEntries(
+      Object.entries({
+        click_action: data.url ? 'OPEN_URL' : 'FLUTTER_NOTIFICATION_CLICK',
+        ...data,
+      }).map(([k, v]) => [k, v == null ? '' : String(v)]),
+    ),
     token
   };
 

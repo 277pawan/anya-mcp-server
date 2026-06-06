@@ -1,0 +1,12 @@
+# Render Blueprint — ensures migrations run automatically on every deploy.
+# Migrations execute inside index.js → boot() → runMigrations() before the server starts.
+services:
+  - type: web
+    name: anya-mcp-server
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production

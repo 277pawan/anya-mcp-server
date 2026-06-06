@@ -7,7 +7,7 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "node src/db/migrate.js && nodemon index.js",
+    "start": "node index.js",
     "dev": "nodemon index.js",
     "migrate": "node src/db/migrate.js",
     "seed": "node src/db/seed.js"

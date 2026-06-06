@@ -14,12 +14,28 @@ export async function listNudges(userId, { category, from, to, limit = 50, offse
   return rows;
 }
 
+const VALID_NUDGE_THEMES = new Set([
+  'normal', 'rabbit_hole', 'deep_dive', 'quick_hit', 'big_question', 'streak_nudge',
+]);
+
+/** Map Life Engine types to valid DB enum values (safe before migration 009 runs). */
+export function normalizeNudgeTheme(theme) {
+  if (!theme) return 'normal';
+  if (VALID_NUDGE_THEMES.has(theme)) return theme;
+  const fallback = {
+    big_question: 'deep_dive',
+    streak_nudge: 'quick_hit',
+  };
+  return fallback[theme] || 'normal';
+}
+
 export async function recordNudge(userId, { category, theme = 'normal', slot, message }) {
+  const safeTheme = normalizeNudgeTheme(theme);
   return withTransaction(async (client) => {
     const { rows } = await client.query(
       `INSERT INTO nudges (user_id, category, theme, slot, message)
        VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [userId, category, theme, slot || null, message || null]
+      [userId, category, safeTheme, slot || null, message || null]
     );
     await client.query(
       `UPDATE users SET total_nudges_sent = total_nudges_sent + 1, updated_at = now() WHERE id = $1`,
