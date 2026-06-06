@@ -577,66 +577,78 @@ export async function streamMessage(ws, userId, sessionId, content) {
 
     let fullText = ""; // accumulates streamed response from Gemini or Groq fallback
 
-    try {
-      // Try Gemini streaming first
-      const geminiStart = Date.now();
-      const model = genAI.getGenerativeModel({
-        model: GEMINI_MODEL,
-        systemInstruction: systemInstruction,
-      });
-      // Build sanitized history — exclude the current user turn (last item),
-      // then ensure it starts with 'user' and has strictly alternating roles.
-      const geminiHistory = sanitizeGeminiHistory(history.slice(0, -1));
-      const chat = model.startChat({ history: geminiHistory });
-      const result = await chat.sendMessageStream(content);
-      for await (const chunk of result.stream) {
-        if (ws.isCancelled || ws.readyState !== 1) {
-          console.log(`[chat.service] Gemini stream interrupted for session: ${sessionId}`);
-          break;
-        }
-        const text = chunk.text();
-        fullText += text;
-        send("chunk", { text });
-      }
-      // ✅ Track Gemini as healthy
-      recordModelHealth("gemini", GEMINI_MODEL, true, Date.now() - geminiStart);
-    } catch (geminiErr) {
-      if (ws.isCancelled || ws.readyState !== 1) {
-        console.log(`[chat.service] Gemini stream was cancelled. Not falling back to Groq.`);
-      } else {
-        // ❌ Track Gemini failure with reason
-        recordModelHealth("gemini", GEMINI_MODEL, false, 0, geminiErr.message);
-        console.warn(`[chat] Gemini stream failed (${GEMINI_MODEL}), falling back to Groq:`, geminiErr.message);
-        providerUsed = "groq";
-        fullText = "";
+    const isGeminiHealthy = geminiHealthy();
+    let tryGemini = isGeminiHealthy;
 
-        const groqStart = Date.now();
-        const groqStream = await groq.chat.completions.create({
-          model: GROQ_MODEL,
-          messages: [
-            { role: "system", content: systemInstruction },
-            ...history.map((m) => ({
-              role: m.role === "assistant" ? "assistant" : "user",
-              content: m.content,
-            })),
-          ],
-          stream: true,
-          max_tokens: 1024,
+    if (tryGemini) {
+      try {
+        // Try Gemini streaming first
+        const geminiStart = Date.now();
+        const model = genAI.getGenerativeModel({
+          model: GEMINI_MODEL,
+          systemInstruction: systemInstruction,
         });
-        for await (const chunk of groqStream) {
+        // Build sanitized history — exclude the current user turn (last item),
+        // then ensure it starts with 'user' and has strictly alternating roles.
+        const geminiHistory = sanitizeGeminiHistory(history.slice(0, -1));
+        const chat = model.startChat({ history: geminiHistory });
+        const result = await chat.sendMessageStream(content);
+        for await (const chunk of result.stream) {
           if (ws.isCancelled || ws.readyState !== 1) {
-            console.log(`[chat.service] Groq stream interrupted for session: ${sessionId}`);
+            console.log(`[chat.service] Gemini stream interrupted for session: ${sessionId}`);
             break;
           }
-          const text = chunk.choices[0]?.delta?.content || "";
-          if (text) {
-            fullText += text;
-            send("chunk", { text });
-          }
+          const text = chunk.text();
+          fullText += text;
+          send("chunk", { text });
         }
-        // ✅ Track Groq as healthy
-        recordModelHealth("groq", GROQ_MODEL, true, Date.now() - groqStart);
+        // ✅ Track Gemini as healthy
+        recordModelHealth("gemini", GEMINI_MODEL, true, Date.now() - geminiStart);
+      } catch (geminiErr) {
+        if (ws.isCancelled || ws.readyState !== 1) {
+          console.log(`[chat.service] Gemini stream was cancelled. Not falling back to Groq.`);
+        } else {
+          // ❌ Track Gemini failure with reason
+          recordModelHealth("gemini", GEMINI_MODEL, false, 0, geminiErr.message);
+          console.warn(`[chat] Gemini stream failed (${GEMINI_MODEL}), falling back to Groq:`, geminiErr.message);
+          tryGemini = false;
+        }
       }
+    } else {
+      console.log(`[chat.service] Gemini stream skipped (unhealthy/quota), using Groq directly`);
+      tryGemini = false;
+    }
+
+    if (!tryGemini && (!ws.isCancelled && ws.readyState === 1)) {
+      providerUsed = "groq";
+      fullText = "";
+
+      const groqStart = Date.now();
+      const groqStream = await groq.chat.completions.create({
+        model: GROQ_MODEL,
+        messages: [
+          { role: "system", content: systemInstruction },
+          ...history.map((m) => ({
+            role: m.role === "assistant" ? "assistant" : "user",
+            content: m.content,
+          })),
+        ],
+        stream: true,
+        max_tokens: 1024,
+      });
+      for await (const chunk of groqStream) {
+        if (ws.isCancelled || ws.readyState !== 1) {
+          console.log(`[chat.service] Groq stream interrupted for session: ${sessionId}`);
+          break;
+        }
+        const text = chunk.choices[0]?.delta?.content || "";
+        if (text) {
+          fullText += text;
+          send("chunk", { text });
+        }
+      }
+      // ✅ Track Groq as healthy
+      recordModelHealth("groq", GROQ_MODEL, true, Date.now() - groqStart);
     }
 
     const latency = Date.now() - start;
