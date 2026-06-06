@@ -117,7 +117,7 @@ function cleanEmailHeader(toStr) {
  * @param {string}  [opts.attachmentName]- Filename to show in email (e.g. "Pawan_Resume.pdf")
  * @returns {Promise<{ success: boolean, messageId?: string, error?: string }>}
  */
-export async function sendEmail({ to, subject, body, fromName, fromEmail, attachmentUrl, attachmentName }) {
+export async function sendEmail({ to, subject, body, fromName, fromEmail, attachmentUrl, attachmentName, userId, leadName, score }) {
   try {
     const gmail     = getGmailClient();
     const senderEmail = fromEmail || process.env.CALENDAR_ID;
@@ -131,10 +131,38 @@ export async function sendEmail({ to, subject, body, fromName, fromEmail, attach
 
     const msgId = response.data.id;
     console.log(`📧 [Email] Sent to ${to} | subject: "${subject}" | msgId: ${msgId}`);
+
+    if (userId) {
+      try {
+        await query(
+          `INSERT INTO email_logs (user_id, sent_to, subject, lead_name, score)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [userId, cleanedTo, subject, leadName || null, score || null]
+        );
+      } catch (logErr) {
+        console.error('⚠️ [Email] Failed to log email to email_logs table:', logErr.message);
+      }
+    }
+
     return { success: true, messageId: msgId, to, subject };
   } catch (err) {
     console.error('[Email] Failed to send:', err.message);
     return { success: false, error: err.message, to, subject };
+  }
+}
+
+export async function getEmailsSentTodayCount(userId) {
+  try {
+    const { rows } = await query(
+      `SELECT COUNT(*)::int AS count 
+       FROM email_logs 
+       WHERE user_id = $1 AND sent_at >= date_trunc('day', now())`,
+      [userId]
+    );
+    return rows[0]?.count || 0;
+  } catch (err) {
+    console.error('[Email] Failed to get daily email count:', err.message);
+    return 0;
   }
 }
 
@@ -236,14 +264,26 @@ export async function getUserBioContext(userId) {
  * @param {number}  [opts.delayMs=2000] - Delay between emails (avoid spam filters)
  * @returns {Promise<Array<{to, subject, success, error?}>>}
  */
-export async function sendProposalBatch(leads, bioContext, { dryRun = false, delayMs = 2000 } = {}) {
+export async function sendProposalBatch(leads, bioContext, { dryRun = false, delayMs = 2000, userId } = {}) {
   const results = [];
+
+  const sentToday = userId ? await getEmailsSentTodayCount(userId) : 0;
+  let remainingLimit = 50 - sentToday;
+  if (remainingLimit < 0) remainingLimit = 0;
+
+  console.log(`📊 [Email Batch] Daily status: sent today ${sentToday}/50. Remaining limit: ${remainingLimit}`);
 
   for (const lead of leads) {
     const email = lead.email;
     if (!email) {
       console.log(`   ⏭️ [Email] No email for lead: ${lead.name || lead.company} — skipping`);
       results.push({ to: null, lead: lead.name || lead.company, skipped: true, reason: 'no_email' });
+      continue;
+    }
+
+    if (remainingLimit <= 0) {
+      console.log(`   ⏭️ [Email Limit Reached] Cannot send email to ${email} (Daily 50 email limit reached) — skipping`);
+      results.push({ to: email, lead: lead.name || lead.company, skipped: true, reason: 'daily_limit_reached' });
       continue;
     }
 
@@ -266,7 +306,14 @@ export async function sendProposalBatch(leads, bioContext, { dryRun = false, del
       fromEmail:      bioContext.email,
       attachmentUrl:  bioContext.resumeUrl,
       attachmentName: bioContext.resumeFileName,
+      userId,
+      leadName:       lead.name || lead.company,
+      score:          lead.score || null,
     });
+
+    if (sendResult.success) {
+      remainingLimit--;
+    }
 
     results.push({ ...sendResult, lead: lead.name || lead.company });
 

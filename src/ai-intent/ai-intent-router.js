@@ -565,10 +565,16 @@ async function callMCPTool(toolName, params) {
         });
         // Auto-send proposal emails if leads have emails and bio has resume
         if (result.success && result.leads?.length && fbio) {
-          const proposalReady = result.leads.filter(l => l.email && l.proposal);
+          const proposalReady = result.leads
+            .map(l => ({ ...l, score: l.relevanceScore || 0 }))
+            .filter(l => l.email && l.proposal && l.score >= 80);
+
           if (proposalReady.length > 0) {
-            console.log(`📧 Auto-sending ${proposalReady.length} proposal email(s) with resume...`);
-            const emailResults = await sendProposalBatch(proposalReady, fbio, { delayMs: 1500 });
+            console.log(`📧 Auto-sending ${proposalReady.length} proposal email(s) with resume (score >= 80)...`);
+            const emailResults = await sendProposalBatch(proposalReady, fbio, {
+              delayMs: 1500,
+              userId: cleanedParams.userId || process.env.DEFAULT_USER_ID
+            });
             result.emailsSent = emailResults.filter(r => r.success).length;
             result.emailResults = emailResults;
             // Fire notification
@@ -611,10 +617,36 @@ async function callMCPTool(toolName, params) {
           maxLeads: cleanedParams.maxLeads ?? DEFAULT_MAX_LEADS,
           fetchLimit: cleanedParams.fetchLimit,
           minScore: 50,
-          generateTemplates: cleanedParams.generateTemplates === true,
+          generateTemplates: true, // Always generate templates so we can auto-apply if emails exist
           objective: "job_hunting",
           userContext: generalUserCtx,
         });
+
+        // Auto-send proposal emails for general jobs if leads have emails and bio has resume
+        if (result.success && result.leads?.length && gbio) {
+          const proposalReady = result.leads
+            .map(l => ({ ...l, score: l.relevanceScore || 0 }))
+            .filter(l => l.email && l.proposal && l.score >= 80);
+
+          if (proposalReady.length > 0) {
+            console.log(`📧 Auto-sending ${proposalReady.length} job application email(s) with resume (score >= 80)...`);
+            const emailResults = await sendProposalBatch(proposalReady, gbio, {
+              delayMs: 1500,
+              userId: cleanedParams.userId || process.env.DEFAULT_USER_ID
+            });
+            result.emailsSent = emailResults.filter(r => r.success).length;
+            result.emailResults = emailResults;
+            // Fire notification
+            if (result.emailsSent > 0) {
+              await sendSmartNotification({
+                type: 'lead_alert',
+                userId: cleanedParams.userId || process.env.DEFAULT_USER_ID,
+                title: '🚀 Applications Sent!',
+                body: `Anya just sent ${result.emailsSent} job application email(s) with your resume attached.`,
+              });
+            }
+          }
+        }
         break;
       }
 
