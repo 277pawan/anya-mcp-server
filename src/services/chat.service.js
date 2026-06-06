@@ -416,23 +416,30 @@ export async function streamMessage(ws, userId, sessionId, content) {
     let systemPromptExt = "";
     let providerUsed = "gemini"; // default; overridden to "groq" on Gemini failure
 
-    if (intentResult.success && intentResult.tool) {
+    if (intentResult.tool) {
       toolName = intentResult.tool;
-      await client.query(
-        `INSERT INTO mcp_tool_calls (user_id, session_id, tool, input, output, success, latency_ms)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [
-          userId,
-          sessionId,
-          toolName,
-          intentResult.params || {},
-          intentResult.result || {},
-          true,
-          Date.now() - start,
-        ],
-      );
-      const dataStr = intentResult.result?.summary || JSON.stringify(intentResult.result || {});
-      systemPromptExt = `\n\n[SYSTEM DATA]: You just checked the necessary information for the user. Here is what you found:\n${dataStr.substring(0, 5000)}\n\n[INSTRUCTION]: Respond to the user naturally using this information. You MUST use the EXACT details from the data above if meetings are present. Do NOT invent fake meeting names or projects. Do NOT mention that you checked a database, used a tool, or received JSON. Speak directly as Anya in a conversational, warm tone. If the data says there are no meetings or events, politely tell the user that their schedule is clear!`;
+      try {
+        await client.query(
+          `INSERT INTO mcp_tool_calls (user_id, session_id, tool, input, output, success, latency_ms)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            userId,
+            sessionId,
+            toolName,
+            intentResult.params || {},
+            intentResult.result || {},
+            intentResult.success !== false,
+            Date.now() - start,
+          ],
+        );
+      } catch (logErr) {
+        console.error("❌ Failed to log MCP tool call:", logErr);
+      }
+
+      if (intentResult.action !== "respond" && intentResult.action !== "background_task") {
+        const dataStr = intentResult.result?.summary || JSON.stringify(intentResult.result || {});
+        systemPromptExt = `\n\n[SYSTEM DATA]: You just checked the necessary information for the user. Here is what you found:\n${dataStr.substring(0, 5000)}\n\n[INSTRUCTION]: Respond to the user naturally using this information. You MUST use the EXACT details from the data above if meetings are present. Do NOT invent fake meeting names or projects. Do NOT mention that you checked a database, used a tool, or received JSON. Speak directly as Anya in a conversational, warm tone. If the data says there are no meetings or events, politely tell the user that their schedule is clear!`;
+      }
     } else if (intentResult.action === "background_task") {
       // 1. Immediate acknowledgment
       const text = intentResult.response;
@@ -464,11 +471,15 @@ export async function streamMessage(ws, userId, sessionId, content) {
               sessionId,
               intentResult.tool,
               intentResult.params || {},
-              bgResult.result || {},
-              true,
+              bgResult.result || { error: bgResult.error },
+              bgResult.success !== false,
               Date.now() - bgStart,
             ],
           );
+
+          if (bgResult.success === false) {
+            throw new Error(bgResult.error || "Unknown tool execution error");
+          }
 
           const bgPrompt = `\n\n[SYSTEM DATA]: The background task '${intentResult.tool}' just finished. Here are the results:\n${JSON.stringify(bgResult.result).substring(0, 5000)}\n\n[INSTRUCTION]: The user is waiting for these results. Present them naturally, warmly, and thoroughly. Do NOT mention that you used a background task, tool, or received JSON. Just say you found the results!`;
 
@@ -493,7 +504,9 @@ export async function streamMessage(ws, userId, sessionId, content) {
           console.log(`✅ Background task completed: ${intentResult.tool}`);
         } catch (err) {
           console.error("❌ Background task failed:", err);
-          send("background_result", { text: "I ran into a small issue while running the background task. Please try again later." });
+          send("background_result", { 
+            text: `⚠️ I ran into an issue while running the background task *${intentResult.tool || 'job scan'}*:\n\n*${err.message || String(err)}*\n\nPlease make sure your internet is working or try again later.` 
+          });
         }
       })();
 

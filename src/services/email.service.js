@@ -92,6 +92,16 @@ async function buildRawEmail({ to, subject, body, fromName, fromEmail, attachmen
   return Buffer.from(rawEmail).toString('base64url');
 }
 
+function cleanEmailHeader(toStr) {
+  if (!toStr) return '';
+  const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+  const matches = toStr.match(emailRegex);
+  if (matches && matches.length > 0) {
+    return matches.map(m => m.trim()).join(', ');
+  }
+  return toStr.trim();
+}
+
 // ─── Core send function ─────────────────────────────────────────────────────
 
 /**
@@ -111,7 +121,8 @@ export async function sendEmail({ to, subject, body, fromName, fromEmail, attach
   try {
     const gmail     = getGmailClient();
     const senderEmail = fromEmail || process.env.CALENDAR_ID;
-    const raw = await buildRawEmail({ to, subject, body, fromName, fromEmail: senderEmail, attachmentUrl, attachmentName });
+    const cleanedTo = cleanEmailHeader(to);
+    const raw = await buildRawEmail({ to: cleanedTo, subject, body, fromName, fromEmail: senderEmail, attachmentUrl, attachmentName });
 
     const response = await gmail.users.messages.send({
       userId: 'me',

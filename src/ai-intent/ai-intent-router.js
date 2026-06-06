@@ -17,6 +17,7 @@ import {
 } from "../search/leadPipelineDefaults.js";
 import { getUserBioContext, sendProposalBatch } from "../services/email.service.js";
 import { sendSmartNotification } from "../utils/notificationHelper.js";
+import { CONFIG } from "../config/config.js";
 
 dotenv.config({ quiet: true });
 
@@ -978,15 +979,40 @@ Output ONLY JSON: {"to":"email","subject":"subject","body":"body text"}`,
         attachmentName:attachResume ? bio?.resumeFileName : null,
       });
 
-      if (sendResult.success) {
+       if (sendResult.success) {
+        let note = '';
+        if (attachResume && !bio?.resumeUrl) {
+          note = '\n\n⚠️ *Note:* I sent the email, but could not attach your resume because no resume is uploaded in your Profile Settings. Please upload a PDF resume in Settings so I can include it next time!';
+        } else if (!bio?.resumeUrl) {
+          note = '\n\n💡 *Tip:* You haven\'t uploaded a resume in Settings yet. Uploading a PDF resume there allows me to automatically attach it to cold emails!';
+        } else if (!attachResume) {
+          note = '\n\n💡 *Tip:* You have a resume uploaded. Next time, you can ask me to "attach my resume" to include it in the cold email!';
+        }
+
+        // Also check if they are missing LinkedIn/GitHub links to make it the "best email"
+        const missingLinks = [];
+        if (!bio?.linkedin) missingLinks.push('LinkedIn profile');
+        if (!bio?.github) missingLinks.push('GitHub URL');
+        if (missingLinks.length > 0) {
+          note += `\n\n💡 *Improvement Tip:* To make this a highly-converting cold email, consider adding your ${missingLinks.join(' and ')} in Profile Settings.`;
+        }
+
         return {
           action: 'respond',
-          response: `✅ Done! I've sent your email to **${composed.to}** with subject "${composed.subject}"${attachResume && bio?.resumeUrl ? ' and attached your resume.' : '.'}`,
+          success: true,
+          tool: 'gmail_send',
+          params: { to: composed.to, subject: composed.subject, attachResume },
+          result: sendResult,
+          response: `✅ Done! I've sent your email to **${composed.to}** with subject "${composed.subject}"${attachResume && bio?.resumeUrl ? ' and attached your resume.' : '.'}${note}`,
           emailResult: sendResult,
         };
       } else {
         return {
           action: 'respond',
+          success: false,
+          tool: 'gmail_send',
+          params: { to: composed.to, subject: composed.subject, attachResume },
+          result: sendResult,
           response: `❌ I composed the email but couldn't send it: ${sendResult.error}. Please check your Gmail OAuth credentials.`,
         };
       }
