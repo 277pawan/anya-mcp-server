@@ -58,29 +58,31 @@ export async function sendPushNotification(token, title, body, data = {}) {
     return false;
   }
 
-  const payload = {
-    notification: {
+  const stringData = Object.fromEntries(
+    Object.entries({
       title,
       body,
-      ...(data.image_url ? { imageUrl: data.image_url } : {})
-    },
-    android: {
-      priority: 'high',
-      notification: {
-        channelId: 'default_notification_channel',
-        sound: 'default',
-        ...(data.image_url ? { imageUrl: data.image_url } : {}),
-        ...(data.url ? { clickAction: 'OPEN_URL' } : {}),
-      },
-    },
-    data: Object.fromEntries(
-      Object.entries({
-        click_action: data.url ? 'OPEN_URL' : 'FLUTTER_NOTIFICATION_CLICK',
-        ...data,
-      }).map(([k, v]) => [k, v == null ? '' : String(v)]),
-    ),
-    token
-  };
+      click_action: data.url ? 'OPEN_URL' : 'FLUTTER_NOTIFICATION_CLICK',
+      ...data,
+    }).map(([k, v]) => [k, v == null ? '' : String(v)]),
+  );
+
+  // Rich image notifications: data-only so the Android app builds BigPicture + full text
+  const payload = data.image_url
+    ? { data: stringData, android: { priority: 'high' }, token }
+    : {
+        notification: { title, body },
+        android: {
+          priority: 'high',
+          notification: {
+            channelId: 'default_notification_channel',
+            sound: 'default',
+            ...(data.url ? { clickAction: 'OPEN_URL' } : {}),
+          },
+        },
+        data: stringData,
+        token,
+      };
 
   if (isFirebaseInitialized) {
     try {

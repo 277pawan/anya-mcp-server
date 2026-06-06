@@ -383,38 +383,13 @@ export async function streamMessage(ws, userId, sessionId, content) {
       history: mappedHistory,
     });
 
-    // 2. Handle MCP tool call logging
+    // 2. Handle action-specific fast paths FIRST (background_task has intentResult.tool set!)
     let toolName = null;
     let systemPromptExt = "";
     let providerUsed = "groq"; // default; overridden to "mistral" on Groq failure
 
-    if (intentResult.tool) {
+    if (intentResult.action === "background_task") {
       toolName = intentResult.tool;
-      // Fire-and-forget via pool (NOT the transaction client) so a logging
-      // failure never aborts the active chat transaction.
-      import('../db/pool.js').then(({ default: pool }) => {
-        pool.query(
-          `INSERT INTO mcp_tool_calls (user_id, session_id, tool, input, output, success, latency_ms)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [
-            userId,
-            sessionId,
-            toolName,
-            intentResult.params || {},
-            intentResult.result || {},
-            intentResult.success !== false,
-            Date.now() - start,
-          ],
-        ).catch((logErr) => {
-          console.error("❌ Failed to log MCP tool call:", logErr.message);
-        });
-      });
-
-      if (intentResult.action !== "respond" && intentResult.action !== "background_task") {
-        const dataStr = intentResult.result?.summary || JSON.stringify(intentResult.result || {});
-        systemPromptExt = `\n\n[SYSTEM DATA]: You just checked the necessary information for the user. Here is what you found:\n${dataStr.substring(0, 5000)}\n\n[INSTRUCTION]: Respond to the user naturally using this information. You MUST use the EXACT details from the data above if meetings are present. Do NOT invent fake meeting names or projects. Do NOT mention that you checked a database, used a tool, or received JSON. Speak directly as Anya in a conversational, warm tone. If the data says there are no meetings or events, politely tell the user that their schedule is clear!`;
-      }
-    } else if (intentResult.action === "background_task") {
       // 1. Immediate acknowledgment
       const text = intentResult.response;
       send("chunk", { text });
@@ -485,7 +460,9 @@ export async function streamMessage(ws, userId, sessionId, content) {
       })();
 
       return; // Free the websocket/connection immediately!
-    } else if (intentResult.action === "respond" && intentResult.response) {
+    }
+
+    if (intentResult.action === "respond" && intentResult.response) {
       // Fast path: Intent router already generated casual chat response!
       const text = intentResult.response;
       send("chunk", { text });
@@ -498,7 +475,9 @@ export async function streamMessage(ws, userId, sessionId, content) {
       });
       send("done", { latency_ms: latency, provider: "groq" });
       return;
-    } else if (intentResult.action === "device_command") {
+    }
+
+    if (intentResult.action === "device_command") {
       const bgPrompt = `\n\n[SYSTEM ACTION]: You are executing a device command. Details:
 - Command: ${intentResult.command}
 - Song/Query: ${intentResult.query || 'None'}
@@ -525,11 +504,39 @@ export async function streamMessage(ws, userId, sessionId, content) {
       });
       send("done", { latency_ms: latency, provider: aiResponse.provider });
       return;
-    } else if (
+    }
+
+    if (
       intentResult.action === "mixed_results" ||
       intentResult.action === "application_pending"
     ) {
       systemPromptExt = `\n\nSystem returned these special results:\n${JSON.stringify(intentResult)}\n\nPlease inform the user.`;
+    }
+
+    if (intentResult.tool) {
+      toolName = intentResult.tool;
+      import('../db/pool.js').then(({ default: pool }) => {
+        pool.query(
+          `INSERT INTO mcp_tool_calls (user_id, session_id, tool, input, output, success, latency_ms)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            userId,
+            sessionId,
+            toolName,
+            intentResult.params || {},
+            intentResult.result || {},
+            intentResult.success !== false,
+            Date.now() - start,
+          ],
+        ).catch((logErr) => {
+          console.error("❌ Failed to log MCP tool call:", logErr.message);
+        });
+      });
+
+      if (intentResult.action !== "respond" && intentResult.action !== "background_task") {
+        const dataStr = intentResult.result?.summary || JSON.stringify(intentResult.result || {});
+        systemPromptExt = `\n\n[SYSTEM DATA]: You just checked the necessary information for the user. Here is what you found:\n${dataStr.substring(0, 5000)}\n\n[INSTRUCTION]: Respond to the user naturally using this information. You MUST use the EXACT details from the data above if meetings are present. Do NOT invent fake meeting names or projects. Do NOT mention that you checked a database, used a tool, or received JSON. Speak directly as Anya in a conversational, warm tone. If the data says there are no meetings or events, politely tell the user that their schedule is clear!`;
+      }
     }
 
     const systemInstruction = await getAnyaSystemPrompt(userId, systemPromptExt);
