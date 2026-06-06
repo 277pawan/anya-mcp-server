@@ -418,8 +418,10 @@ export async function streamMessage(ws, userId, sessionId, content) {
 
     if (intentResult.tool) {
       toolName = intentResult.tool;
-      try {
-        await client.query(
+      // Fire-and-forget via pool (NOT the transaction client) so a logging
+      // failure never aborts the active chat transaction.
+      import('../db/pool.js').then(({ default: pool }) => {
+        pool.query(
           `INSERT INTO mcp_tool_calls (user_id, session_id, tool, input, output, success, latency_ms)
            VALUES ($1, $2, $3, $4, $5, $6, $7)`,
           [
@@ -431,10 +433,10 @@ export async function streamMessage(ws, userId, sessionId, content) {
             intentResult.success !== false,
             Date.now() - start,
           ],
-        );
-      } catch (logErr) {
-        console.error("❌ Failed to log MCP tool call:", logErr);
-      }
+        ).catch((logErr) => {
+          console.error("❌ Failed to log MCP tool call:", logErr.message);
+        });
+      });
 
       if (intentResult.action !== "respond" && intentResult.action !== "background_task") {
         const dataStr = intentResult.result?.summary || JSON.stringify(intentResult.result || {});
