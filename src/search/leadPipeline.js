@@ -44,7 +44,7 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
     generateTemplates = false,
     objective = "freelance_pitch",
     fetchLimit: fetchLimitOption,
-    scrapeTimeoutMs = positiveInt(process.env.LEAD_SCRAPE_TIMEOUT_MS, 25000),
+    scrapeTimeoutMs = positiveInt(process.env.LEAD_SCRAPE_TIMEOUT_MS, 60000),
     linkedInBoost: linkedInBoostOption,
     userContext = {
       name: "Your Name",
@@ -58,7 +58,7 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
     fetchLimitOption ?? settings.fetchLimit,
     DEFAULT_LEAD_FETCH_LIMIT,
   );
-  const effectiveScrapeTimeout = positiveInt(scrapeTimeoutMs, 25000);
+  const effectiveScrapeTimeout = positiveInt(scrapeTimeoutMs, 60000);
   const linkedInBoost =
     linkedInBoostOption ??
     (process.env.LEAD_LINKEDIN_BOOST !== "0" &&
@@ -229,7 +229,33 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
       }
 
       if (!lead.foundEmails?.length) {
-        console.log(`      ✉️ No email found (add HUNTER_API_KEY / EXA_API_KEY)`);
+        console.log(`      ✉️ No email found via Hunter/Exa.`);
+        
+        let fallbackDomain = null;
+        if (lead.sourceUrl) {
+          try {
+            const urlObj = new URL(lead.sourceUrl);
+            let domain = urlObj.hostname.toLowerCase();
+            if (domain.startsWith("www.")) domain = domain.substring(4);
+            const ignoredDomains = ["linkedin.com", "indeed.com", "naukri.com", "foundit.in", "instahyre.com", "wellfound.com", "upwork.com", "glassdoor.com", "ycombinator.com", "greenhouse.io", "lever.co", "workable.com"];
+            if (!ignoredDomains.some(d => domain.includes(d))) {
+              fallbackDomain = domain;
+            }
+          } catch(e) {}
+        }
+        
+        if (!fallbackDomain && lead.company) {
+          const cleanCompany = lead.company.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (cleanCompany.length > 2) {
+            fallbackDomain = `${cleanCompany}.com`;
+          }
+        }
+
+        if (fallbackDomain) {
+          lead.foundEmails = [`careers@${fallbackDomain}`, `hiring@${fallbackDomain}`];
+          lead.emailSource = "fallback_guess";
+          console.log(`      ✉️ Fallback: Guessed standard emails careers@${fallbackDomain}`);
+        }
       }
     }
 

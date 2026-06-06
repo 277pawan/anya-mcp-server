@@ -1,5 +1,7 @@
 // src/controller/user.controller.js
 import * as UserService from '../services/user.service.js';
+import cloudinary from '../utils/cloudinary.js';
+import { Readable } from 'stream';
 
 const uid = (req) => req.userId || process.env.DEFAULT_USER_ID;
 
@@ -106,6 +108,46 @@ export async function replaceWorkTypes(req, res) {
     const data = await UserService.replaceWorkTypes(uid(req), workTypes);
     res.json({ success: true, data });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+export async function uploadResume(req, res) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Stream the buffer from multer memory storage → Cloudinary
+    const cloudinaryUrl = await new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          resource_type: 'raw',      // required for non-image files like PDF
+          folder: 'anya/resumes',
+          public_id: `resume_${uid(req)}_${Date.now()}`,
+          overwrite: true,
+          use_filename: false,
+        },
+        (error, result) => {
+          if (error) return reject(error);
+          resolve(result.secure_url);
+        }
+      );
+      Readable.from(req.file.buffer).pipe(uploadStream);
+    });
+
+    // Persist the public Cloudinary URL into user preferences in the DB
+    const prefs = await UserService.getPreferences(uid(req)) || {};
+    prefs.resume = prefs.resume || {};
+    prefs.resume.url      = cloudinaryUrl;
+    prefs.resume.fileName = req.file.originalname;
+
+    const updatedPrefs = await UserService.updatePreferences(uid(req), prefs);
+
+    console.log(`[Resume Upload] Uploaded to Cloudinary: ${cloudinaryUrl}`);
+    res.json({ success: true, url: cloudinaryUrl, data: updatedPrefs });
+  } catch (err) {
+    console.error('[Resume Upload] Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 }

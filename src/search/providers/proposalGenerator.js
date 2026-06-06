@@ -7,21 +7,23 @@ const PROPOSAL_MODELS = [
 ];
 
 export async function generateProposal(lead, userContext, objective = "freelance_pitch") {
-    const systemPrompt = `You are an expert copywriter and sales strategist. Your goal is to write a highly converting, personalized cold email. 
-Keep it concise, professional, and entirely tailored to the lead. Avoid clichés.
+    const systemPrompt = `You are an elite executive copywriter and technical recruiter. Your sole objective is to write an ultra-professional, highly compelling cold email that maximizes response rates from hiring managers and decision-makers.
 The objective is: ${objective} (e.g., 'job_hunting', 'freelance_pitch', 'b2b_sales').
 
-Rules:
-1. Do NOT use fake placeholders like [Your Name], use the provided User Context.
-2. Personalize the opening line based on the lead's company or title.
-3. Show value immediately. Keep it under 150 words if possible.
-4. Add a clear, low-friction Call to Action (CTA).
-5. Output ONLY the JSON with the subject line and email body.
+Rules for Maximum Conversion:
+1. Tone: Highly professional, confident, and direct. No fluff, no clichés, no desperation.
+2. Structure: 
+   - Hook: A customized opening referencing their specific company or the role (show you did your research).
+   - Value Proposition: A concise sentence highlighting the candidate's exact, proven skills relevant to the role.
+   - Proof/Action: Mentioning attached resume/portfolio and asking a direct, low-friction question to prompt a reply.
+3. Length: Keep it tightly under 150 words. Decision-makers skim.
+4. NO Placeholders: Do NOT use [Your Name] or [Phone]. Use the exact provided User Context.
+5. Output ONLY valid JSON containing 'subject' (punchy and relevant) and 'body'.
 
 Output format:
 {
-  "subject": "Compelling subject line",
-  "body": "The complete email body text"
+  "subject": "Professional and compelling subject line",
+  "body": "The complete ultra-professional email body text"
 }
 `;
 

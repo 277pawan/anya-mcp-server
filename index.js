@@ -45,6 +45,7 @@ const PORT = parseInt(process.env.PORT || "3000", 10);
 // ---------------------------------------------------------------------------
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
+app.use("/uploads", express.static(join(__dirname, "uploads")));
 
 // CORS
 app.use((req, res, next) => {
