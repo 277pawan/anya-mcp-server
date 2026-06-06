@@ -90,6 +90,52 @@ const lastSentMap = new Map();
  * @param {boolean} [opts.pushOnly]  - If true, only FCM push, skip WebSocket broadcast
  * @returns {Promise<{ sent: boolean, reason?: string }>}
  */
+// Helper to resolve a professional illustration/photo URL based on category and keywords
+function getNotificationImage(type, category, text) {
+  const normalizedText = (text || "").toLowerCase();
+
+  // If text is open-source/developer focused:
+  if (
+    normalizedText.includes("open source") ||
+    normalizedText.includes("github") ||
+    normalizedText.includes("repository") ||
+    normalizedText.includes("open-source")
+  ) {
+    return "https://images.unsplash.com/photo-1618401471353-b98aedd07871?w=600&auto=format&fit=crop&q=80"; // Open source/GitHub desk setup
+  }
+
+  if (category === "tech" || category === "business" || normalizedText.includes("code") || normalizedText.includes("coding")) {
+    return "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=600&auto=format&fit=crop&q=80"; // Tech/code
+  }
+
+  // Fallback to category maps
+  const categoryImages = {
+    health: "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&auto=format&fit=crop&q=80",      // Mindfulness/Yoga
+    mind: "https://images.unsplash.com/photo-1518241353330-0f7941c2d9b5?w=600&auto=format&fit=crop&q=80",        // Zen/Meditation
+    body: "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=600&auto=format&fit=crop&q=80",        // Fitness
+    motivation: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600&auto=format&fit=crop&q=80",  // Sunset/Beach/Inspiration
+    reflection: "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=600&auto=format&fit=crop&q=80",  // Nature reflection
+    innovation: "https://images.unsplash.com/photo-1457369804613-52c61a468e7d?w=600&auto=format&fit=crop&q=80",  // Art/Creativity
+    business: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=600&auto=format&fit=crop&q=80",    // Corporate/Offices
+  };
+
+  return categoryImages[category] || null;
+}
+
+/**
+ * Decides whether to send a notification based on type rules, cooldowns, and quiet hours.
+ *
+ * @param {object} opts
+ * @param {'meeting_alert'|'ai_reply'|'mcp_result'|'nudge'|'lead_alert'|'life_insight'|'custom'} opts.type
+ * @param {string}  opts.userId      - User's UUID (used to fetch FCM token + preferences)
+ * @param {string}  [opts.token]     - FCM device token. If omitted, fetched from DB.
+ * @param {string}  opts.title       - Notification title
+ * @param {string}  opts.body        - Notification body text
+ * @param {object}  [opts.data]      - Optional FCM data payload (key-value strings)
+ * @param {boolean} [opts.wsOnly]    - If true, only send via WebSocket, skip FCM push
+ * @param {boolean} [opts.pushOnly]  - If true, only FCM push, skip WebSocket broadcast
+ * @returns {Promise<{ sent: boolean, reason?: string }>}
+ */
 export async function sendSmartNotification({
   type = "custom",
   userId,
@@ -153,19 +199,63 @@ export async function sendSmartNotification({
       }
     }
 
+    // ── 4.1 Link & Image Extraction + Cleanup ────────────────────────────────
+    let cleanBody = body || "";
+    let extractedUrl = data.url || null;
+    let extractedUrlTitle = data.url_title || null;
+
+    // Regex to match markdown links: [Text](URL)
+    const mdLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/;
+    const mdMatch = cleanBody.match(mdLinkRegex);
+    if (mdMatch) {
+      extractedUrlTitle = mdMatch[1];
+      extractedUrl = mdMatch[2];
+      // Clean up body text to replace markdown link syntax with just the text label
+      cleanBody = cleanBody.replace(mdLinkRegex, extractedUrlTitle);
+    } else {
+      // Fallback: extract raw HTTP/HTTPS URL
+      const urlRegex = /(https?:\/\/[^\s]+)/;
+      const urlMatch = cleanBody.match(urlRegex);
+      if (urlMatch) {
+        extractedUrl = urlMatch[1];
+        try {
+          const domain = new URL(extractedUrl).hostname.replace("www.", "");
+          extractedUrlTitle = domain;
+        } catch (_) {
+          extractedUrlTitle = "Open Link";
+        }
+      }
+    }
+
+    // Determine rich image banner URL
+    const category = data.category || (type === "nudge" ? "reflection" : null);
+    const imageUrl = getNotificationImage(type, category, cleanBody);
+
+    // Enriched data payload for notification
+    const enrichedData = {
+      ...data,
+    };
+    if (extractedUrl) {
+      enrichedData.url = extractedUrl;
+      enrichedData.url_title = extractedUrlTitle || "Open Link";
+    }
+    if (imageUrl) {
+      enrichedData.image_url = imageUrl;
+    }
+
     // ── 5. Dispatch ───────────────────────────────────────────────────────────
     let pushSent = false;
 
     // WebSocket (for active sessions in the app)
     if (!pushOnly) {
-      broadcast("notification", { type, title, body, ...data });
+      broadcast("notification", { type, title, body: cleanBody, ...enrichedData });
     }
 
     // FCM push (for background / locked screen)
     if (!wsOnly && fcmToken) {
-      pushSent = await sendPushNotification(fcmToken, title, body, {
+      pushSent = await sendPushNotification(fcmToken, title, cleanBody, {
         notification_type: type,
-        ...data,
+        ...enrichedData,
       });
     } else if (!wsOnly) {
       // No token yet — log for debugging
