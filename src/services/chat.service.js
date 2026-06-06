@@ -3,7 +3,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import Groq from "groq-sdk";
 import { routeUserMessage } from "../ai-intent/ai-intent-router.js";
 import { getPreferences, getUserProfile } from "./user.service.js";
-import { recordModelHealth } from "./model-health.service.js";
+import { recordModelHealth, getLiveHealthCache } from "./model-health.service.js";
 
 // ─── Model config (single source of truth — change here to upgrade) ──────────
 const GEMINI_MODEL = "gemini-2.0-flash";
@@ -11,6 +11,19 @@ const GROQ_MODEL   = "llama-3.3-70b-versatile";   // latest fast groq model
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const groq   = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+// Returns false if Gemini has recently failed — skip it and go straight to Groq
+function geminiHealthy() {
+  const cache = getLiveHealthCache();
+  const entry = cache.find(m => m.provider === "gemini" && m.model === GEMINI_MODEL);
+  if (!entry) return true; // never tried = assume healthy
+  if (entry.lastFailure && (!entry.lastSuccess || entry.lastFailure > entry.lastSuccess)) {
+    const msSinceFail = Date.now() - new Date(entry.lastFailure).getTime();
+    // If failed in the last 10 minutes, skip Gemini
+    if (msSinceFail < 10 * 60 * 1000) return false;
+  }
+  return true;
+}
 
 const ANYA_PERSONA = `Your name is Anya. You are Anya, a highly capable, warm, and friendly companion. You identify as a female human named Anya, NOT an AI, bot, virtual assistant, or a generic "personal assistant".
 Crucial Identity Rules:
@@ -671,38 +684,47 @@ export async function searchMessages(userId, q, { limit = 20 } = {}) {
 // ---------------------------------------------------------------------------
 async function callAI(userId, history, content, systemPromptExt = "") {
   const systemInstruction = await getAnyaSystemPrompt(userId, systemPromptExt);
-  try {
-    const geminiStart = Date.now();
-    const model = genAI.getGenerativeModel({
-      model: GEMINI_MODEL,
-      systemInstruction: systemInstruction,
-    });
-    const geminiHistory = sanitizeGeminiHistory(history.slice(0, -1));
-    const chat = model.startChat({ history: geminiHistory });
-    const result = await chat.sendMessage(content);
-    recordModelHealth("gemini", GEMINI_MODEL, true, Date.now() - geminiStart);
-    return { text: result.response.text(), provider: "gemini", model: GEMINI_MODEL };
-  } catch (geminiErr) {
-    recordModelHealth("gemini", GEMINI_MODEL, false, 0, geminiErr.message);
-    console.warn(`[callAI] Gemini failed (${GEMINI_MODEL}), using Groq:`, geminiErr.message);
-    const groqStart = Date.now();
-    const completion = await groq.chat.completions.create({
-      model: GROQ_MODEL,
-      messages: [
-        { role: "system", content: ANYA_PERSONA + systemPromptExt },
-        ...history.map((m) => ({
-          role: m.role === "assistant" ? "assistant" : "user",
-          content: m.content,
-        })),
-        { role: "user", content },
-      ],
-      max_tokens: 1024,
-    });
-    recordModelHealth("groq", GROQ_MODEL, true, Date.now() - groqStart);
-    return {
-      text: completion.choices[0].message.content,
-      provider: "groq",
-      model: GROQ_MODEL,
-    };
+
+  // Skip Gemini entirely if it's been failing recently (quota/rate-limit)
+  if (geminiHealthy()) {
+    try {
+      const geminiStart = Date.now();
+      const model = genAI.getGenerativeModel({
+        model: GEMINI_MODEL,
+        systemInstruction: systemInstruction,
+      });
+      const geminiHistory = sanitizeGeminiHistory(history.slice(0, -1));
+      const chat = model.startChat({ history: geminiHistory });
+      const result = await chat.sendMessage(content);
+      recordModelHealth("gemini", GEMINI_MODEL, true, Date.now() - geminiStart);
+      return { text: result.response.text(), provider: "gemini", model: GEMINI_MODEL };
+    } catch (geminiErr) {
+      recordModelHealth("gemini", GEMINI_MODEL, false, 0, geminiErr.message);
+      console.warn(`[callAI] Gemini failed (${GEMINI_MODEL}), falling back to Groq:`, geminiErr.message);
+      // Fall through to Groq below
+    }
+  } else {
+    console.log(`[callAI] Gemini skipped (unhealthy/quota), using Groq directly`);
   }
+
+  // Groq fallback
+  const groqStart = Date.now();
+  const completion = await groq.chat.completions.create({
+    model: GROQ_MODEL,
+    messages: [
+      { role: "system", content: ANYA_PERSONA + systemPromptExt },
+      ...history.map((m) => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.content,
+      })),
+      { role: "user", content },
+    ],
+    max_tokens: 1024,
+  });
+  recordModelHealth("groq", GROQ_MODEL, true, Date.now() - groqStart);
+  return {
+    text: completion.choices[0].message.content,
+    provider: "groq",
+    model: GROQ_MODEL,
+  };
 }
