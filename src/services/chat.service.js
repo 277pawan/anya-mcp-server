@@ -1,29 +1,14 @@
 import { query, withTransaction } from "../db/pool.js";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import Groq from "groq-sdk";
 import { routeUserMessage } from "../ai-intent/ai-intent-router.js";
 import { getPreferences, getUserProfile } from "./user.service.js";
 import { recordModelHealth, getLiveHealthCache } from "./model-health.service.js";
+import { chatWithGlobalFallback } from "../ai/llm-fallback.js";
 
 // ─── Model config (single source of truth — change here to upgrade) ──────────
-const GEMINI_MODEL = "gemini-2.0-flash";
 const GROQ_MODEL   = "llama-3.3-70b-versatile";   // latest fast groq model
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const groq   = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
-// Returns false if Gemini has recently failed — skip it and go straight to Groq
-function geminiHealthy() {
-  const cache = getLiveHealthCache();
-  const entry = cache.find(m => m.provider === "gemini" && m.model === GEMINI_MODEL);
-  if (!entry) return true; // never tried = assume healthy
-  if (entry.lastFailure && (!entry.lastSuccess || entry.lastFailure > entry.lastSuccess)) {
-    const msSinceFail = Date.now() - new Date(entry.lastFailure).getTime();
-    // If failed in the last 10 minutes, skip Gemini
-    if (msSinceFail < 10 * 60 * 1000) return false;
-  }
-  return true;
-}
 
 const ANYA_PERSONA = `Your name is Anya. You are Anya, a highly capable, warm, and friendly companion. You identify as a female human named Anya, NOT an AI, bot, virtual assistant, or a generic "personal assistant".
 Crucial Identity Rules:
@@ -151,40 +136,7 @@ You are Anya. ${profile.name || "Pawan Bisht"} created you. You know them comple
 
 
 
-// ---------------------------------------------------------------------------
-// Helpers — Gemini history sanitizer
-// ---------------------------------------------------------------------------
-/**
- * Gemini requires:
- *   1. history must NOT be empty and must start with role='user'
- *   2. roles must alternate strictly (user → model → user → …)
- * This helper enforces both rules so we never crash on bad DB state.
- */
-function sanitizeGeminiHistory(rawHistory) {
-  // Map DB roles to Gemini roles
-  const mapped = rawHistory.map((m) => ({
-    role: m.role === "assistant" ? "model" : "user",
-    parts: [{ text: m.content || "" }],
-  }));
 
-  // Drop leading 'model' turns — Gemini requires the first turn to be 'user'
-  let start = 0;
-  while (start < mapped.length && mapped[start].role !== "user") start++;
-  const trimmed = mapped.slice(start);
-
-  // Collapse consecutive same-role turns by joining their text
-  const clean = [];
-  for (const turn of trimmed) {
-    if (clean.length > 0 && clean[clean.length - 1].role === turn.role) {
-      // Merge into the last entry
-      clean[clean.length - 1].parts[0].text += "\n" + turn.parts[0].text;
-    } else {
-      clean.push({ role: turn.role, parts: [{ text: turn.parts[0].text }] });
-    }
-  }
-
-  return clean;
-}
 
 // ---------------------------------------------------------------------------
 // Sessions
@@ -427,7 +379,7 @@ export async function streamMessage(ws, userId, sessionId, content) {
     // 2. Handle MCP tool call logging
     let toolName = null;
     let systemPromptExt = "";
-    let providerUsed = "gemini"; // default; overridden to "groq" on Gemini failure
+    let providerUsed = "groq"; // default; overridden to "mistral" on Groq failure
 
     if (intentResult.tool) {
       toolName = intentResult.tool;
@@ -575,80 +527,114 @@ export async function streamMessage(ws, userId, sessionId, content) {
 
     const systemInstruction = await getAnyaSystemPrompt(userId, systemPromptExt);
 
-    let fullText = ""; // accumulates streamed response from Gemini or Groq fallback
+    let fullText = ""; // accumulates streamed response from Groq or Mistral fallback
+    let tryGroq = true;
+    providerUsed = "groq";
 
-    const isGeminiHealthy = geminiHealthy();
-    let tryGemini = isGeminiHealthy;
-
-    if (tryGemini) {
+    if (tryGroq && (!ws.isCancelled && ws.readyState === 1)) {
       try {
-        // Try Gemini streaming first
-        const geminiStart = Date.now();
-        const model = genAI.getGenerativeModel({
-          model: GEMINI_MODEL,
-          systemInstruction: systemInstruction,
+        const groqStart = Date.now();
+        const groqStream = await groq.chat.completions.create({
+          model: GROQ_MODEL,
+          messages: [
+            { role: "system", content: systemInstruction },
+            ...history.map((m) => ({
+              role: m.role === "assistant" ? "assistant" : "user",
+              content: m.content,
+            })),
+          ],
+          stream: true,
+          max_tokens: 1024,
         });
-        // Build sanitized history — exclude the current user turn (last item),
-        // then ensure it starts with 'user' and has strictly alternating roles.
-        const geminiHistory = sanitizeGeminiHistory(history.slice(0, -1));
-        const chat = model.startChat({ history: geminiHistory });
-        const result = await chat.sendMessageStream(content);
-        for await (const chunk of result.stream) {
+        for await (const chunk of groqStream) {
           if (ws.isCancelled || ws.readyState !== 1) {
-            console.log(`[chat.service] Gemini stream interrupted for session: ${sessionId}`);
+            console.log(`[chat.service] Groq stream interrupted for session: ${sessionId}`);
             break;
           }
-          const text = chunk.text();
-          fullText += text;
-          send("chunk", { text });
+          const text = chunk.choices[0]?.delta?.content || "";
+          if (text) {
+            fullText += text;
+            send("chunk", { text });
+          }
         }
-        // ✅ Track Gemini as healthy
-        recordModelHealth("gemini", GEMINI_MODEL, true, Date.now() - geminiStart);
-      } catch (geminiErr) {
-        if (ws.isCancelled || ws.readyState !== 1) {
-          console.log(`[chat.service] Gemini stream was cancelled. Not falling back to Groq.`);
-        } else {
-          // ❌ Track Gemini failure with reason
-          recordModelHealth("gemini", GEMINI_MODEL, false, 0, geminiErr.message);
-          console.warn(`[chat] Gemini stream failed (${GEMINI_MODEL}), falling back to Groq:`, geminiErr.message);
-          tryGemini = false;
-        }
+        recordModelHealth("groq", GROQ_MODEL, true, Date.now() - groqStart);
+      } catch (groqErr) {
+        recordModelHealth("groq", GROQ_MODEL, false, 0, groqErr.message);
+        console.warn(`[chat] Groq stream failed, falling back to Mistral:`, groqErr.message);
+        tryGroq = false;
       }
-    } else {
-      console.log(`[chat.service] Gemini stream skipped (unhealthy/quota), using Groq directly`);
-      tryGemini = false;
     }
 
-    if (!tryGemini && (!ws.isCancelled && ws.readyState === 1)) {
-      providerUsed = "groq";
+    if (!tryGroq && (!ws.isCancelled && ws.readyState === 1)) {
+      providerUsed = "mistral";
       fullText = "";
+      try {
+        const mistralStart = Date.now();
+        const mistralApiKey = process.env.MISTRAL_API_KEY;
+        if (!mistralApiKey) {
+          throw new Error("MISTRAL_API_KEY not configured");
+        }
+        const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "text/event-stream",
+            Authorization: `Bearer ${mistralApiKey}`,
+          },
+          body: JSON.stringify({
+            model: "mistral-small-latest",
+            messages: [
+              { role: "system", content: systemInstruction },
+              ...history.map((m) => ({
+                role: m.role === "assistant" ? "assistant" : "user",
+                content: m.content,
+              })),
+            ],
+            stream: true,
+            max_tokens: 1024,
+          }),
+        });
 
-      const groqStart = Date.now();
-      const groqStream = await groq.chat.completions.create({
-        model: GROQ_MODEL,
-        messages: [
-          { role: "system", content: systemInstruction },
-          ...history.map((m) => ({
-            role: m.role === "assistant" ? "assistant" : "user",
-            content: m.content,
-          })),
-        ],
-        stream: true,
-        max_tokens: 1024,
-      });
-      for await (const chunk of groqStream) {
-        if (ws.isCancelled || ws.readyState !== 1) {
-          console.log(`[chat.service] Groq stream interrupted for session: ${sessionId}`);
-          break;
+        if (!response.ok) {
+          throw new Error(`Mistral API returned status ${response.status}`);
         }
-        const text = chunk.choices[0]?.delta?.content || "";
-        if (text) {
-          fullText += text;
-          send("chunk", { text });
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done || ws.isCancelled || ws.readyState !== 1) {
+            break;
+          }
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            const cleaned = line.trim();
+            if (!cleaned.startsWith("data:")) continue;
+            const dataStr = cleaned.slice(5).trim();
+            if (dataStr === "[DONE]") break;
+            try {
+              const parsed = JSON.parse(dataStr);
+              const text = parsed.choices[0]?.delta?.content || "";
+              if (text) {
+                fullText += text;
+                send("chunk", { text });
+              }
+            } catch (e) {
+              // Ignore parse error
+            }
+          }
         }
+        recordModelHealth("mistral", "mistral-small-latest", true, Date.now() - mistralStart);
+      } catch (mistralErr) {
+        recordModelHealth("mistral", "mistral-small-latest", false, 0, mistralErr.message);
+        console.error("❌ Fallback Mistral stream failed:", mistralErr.message);
+        send("chunk", { text: "\n\n⚠️ I am having trouble connecting to all my AI models. Please check your keys or network connection." });
       }
-      // ✅ Track Groq as healthy
-      recordModelHealth("groq", GROQ_MODEL, true, Date.now() - groqStart);
     }
 
     const latency = Date.now() - start;
@@ -663,7 +649,7 @@ export async function streamMessage(ws, userId, sessionId, content) {
     await saveMessage(client, sessionId, userId, "assistant", fullText, {
       tool_name: toolName,
       provider: providerUsed,
-      model: providerUsed === "gemini" ? GEMINI_MODEL : GROQ_MODEL,
+      model: providerUsed === "groq" ? GROQ_MODEL : "mistral-small-latest",
       latency_ms: latency,
       is_streamed: true,
     });
@@ -697,46 +683,33 @@ export async function searchMessages(userId, q, { limit = 20 } = {}) {
 async function callAI(userId, history, content, systemPromptExt = "") {
   const systemInstruction = await getAnyaSystemPrompt(userId, systemPromptExt);
 
-  // Skip Gemini entirely if it's been failing recently (quota/rate-limit)
-  if (geminiHealthy()) {
-    try {
-      const geminiStart = Date.now();
-      const model = genAI.getGenerativeModel({
-        model: GEMINI_MODEL,
-        systemInstruction: systemInstruction,
-      });
-      const geminiHistory = sanitizeGeminiHistory(history.slice(0, -1));
-      const chat = model.startChat({ history: geminiHistory });
-      const result = await chat.sendMessage(content);
-      recordModelHealth("gemini", GEMINI_MODEL, true, Date.now() - geminiStart);
-      return { text: result.response.text(), provider: "gemini", model: GEMINI_MODEL };
-    } catch (geminiErr) {
-      recordModelHealth("gemini", GEMINI_MODEL, false, 0, geminiErr.message);
-      console.warn(`[callAI] Gemini failed (${GEMINI_MODEL}), falling back to Groq:`, geminiErr.message);
-      // Fall through to Groq below
-    }
-  } else {
-    console.log(`[callAI] Gemini skipped (unhealthy/quota), using Groq directly`);
-  }
-
-  // Groq fallback
-  const groqStart = Date.now();
-  const completion = await groq.chat.completions.create({
-    model: GROQ_MODEL,
+  const fallbackResult = await chatWithGlobalFallback({
     messages: [
-      { role: "system", content: ANYA_PERSONA + systemPromptExt },
+      { role: "system", content: systemInstruction },
       ...history.map((m) => ({
         role: m.role === "assistant" ? "assistant" : "user",
         content: m.content,
       })),
       { role: "user", content },
     ],
-    max_tokens: 1024,
+    taskName: "Anya callAI",
+    temperature: 0.3,
+    maxTokens: 1024,
+    groqModels: [GROQ_MODEL],
+    mistralModels: ["mistral-small-latest"],
   });
-  recordModelHealth("groq", GROQ_MODEL, true, Date.now() - groqStart);
+
+  if (fallbackResult.success) {
+    return {
+      text: fallbackResult.content,
+      provider: fallbackResult.provider,
+      model: fallbackResult.model,
+    };
+  }
+
   return {
-    text: completion.choices[0].message.content,
-    provider: "groq",
-    model: GROQ_MODEL,
+    text: "⚠️ I am having trouble connecting to all my AI models. Please check your keys or network connection.",
+    provider: "system",
+    model: "error-fallback",
   };
 }

@@ -9,12 +9,10 @@ import { getNudgesCountToday, recordNudge, getLastNudgeTime } from './nudge.serv
 import { getLifeEngineState } from './lifeEngine.service.js';
 import { CategorySelector } from '../modules/life-engine/categorySelector.js';
 import { AIGenerator } from '../modules/life-engine/aiGenerator.js';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const notifiedEvents = new Set(); // In-memory tracker to prevent spam
 
 import { runGlobalChatCleanup } from './chat-cleanup.service.js';

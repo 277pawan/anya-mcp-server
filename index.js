@@ -33,6 +33,7 @@ import { addClient, removeClient } from "./src/services/ws-registry.js";
 import { startLifeEngine } from "./src/services/life-engine.service.js";
 import { runMigrations } from "./src/db/migrate.js";
 import { runSeed } from "./src/db/seed.js";
+import { initHealthCacheFromDb } from "./src/services/model-health.service.js";
 
 
 
@@ -327,6 +328,10 @@ async function boot() {
     console.log("Running database seeding...");
     await runSeed();
     console.log("Database seeding check complete!\n");
+
+    console.log("Loading model health cache...");
+    await initHealthCacheFromDb();
+    console.log("Model health cache loaded!\n");
 
     console.log("Initializing MCP servers...");
     await initAllMCPServers();

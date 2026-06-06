@@ -140,17 +140,7 @@ export async function chatWithGlobalFallback({
     }
   }
 
-  // Add Gemini candidates
-  if (geminiApiKey && geminiModels.length) {
-    for (const model of geminiModels) {
-      candidates.push({
-        provider: "gemini",
-        apiUrl: GEMINI_API_URL,
-        apiKey: geminiApiKey,
-        model,
-      });
-    }
-  }
+
 
   if (groqApiKey && groqModels.length) {
     for (const model of groqModels) {

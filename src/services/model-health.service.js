@@ -119,3 +119,32 @@ export async function getAllModelHealth() {
 export function getLiveHealthCache() {
   return Array.from(healthCache.values());
 }
+
+/**
+ * Pre-populate the in-memory health cache from the database at startup.
+ */
+export async function initHealthCacheFromDb() {
+  try {
+    const { rows } = await query(
+      `SELECT provider, model, is_healthy, last_checked_at, last_error, total_calls, success_calls, fail_calls, avg_latency_ms 
+       FROM ai_model_health`
+    );
+    for (const row of rows) {
+      const key = `${row.provider}/${row.model}`;
+      healthCache.set(key, {
+        provider: row.provider,
+        model: row.model,
+        totalCalls: row.total_calls,
+        successCalls: row.success_calls,
+        failCalls: row.fail_calls,
+        lastSuccess: row.is_healthy ? new Date(row.last_checked_at) : null,
+        lastFailure: !row.is_healthy ? new Date(row.last_checked_at) : null,
+        lastErrorMsg: row.last_error,
+        avgLatencyMs: row.avg_latency_ms,
+      });
+    }
+    console.log(`ℹ️ [ModelHealth] Loaded ${healthCache.size} model health record(s) from DB.`);
+  } catch (err) {
+    console.warn("⚠️ [ModelHealth] Failed to load health cache from DB:", err.message);
+  }
+}

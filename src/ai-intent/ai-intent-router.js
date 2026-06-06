@@ -709,7 +709,7 @@ export async function routeUserMessage(userMessage, userContext = {}) {
       const executeJobSearch = async () => {
         let enhancedQuery = classification.entities.query || "";
         let searchMode = "direct";
-        if (CONFIG.LLM_PROVIDER_PRIMARY !== "huggingface" && CONFIG.LLM_PROVIDER_FALLBACK !== "huggingface") {
+        if (process.env.LLM_PROVIDER_PRIMARY !== "huggingface" && process.env.LLM_PROVIDER_FALLBACK !== "huggingface") {
           try {
             console.log("🤖 Generating enhanced search query...");
             const queryResponse = await chatWithGlobalFallback(
