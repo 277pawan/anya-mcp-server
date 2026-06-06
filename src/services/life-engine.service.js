@@ -49,6 +49,10 @@ export function startLifeEngine() {
 
 async function checkCalendarEvents() {
   try {
+    const uid = process.env.DEFAULT_USER_ID || '89968338-6678-48e0-be01-f8472e550e1d';
+    const profile = await getUserProfile(uid);
+    const alertTimingMins = profile?.preferences?.alert_timing || profile?.preferences?.alertTiming || profile?.preferences?.notifications?.alert_timing || 10;
+
     const eventsRes = await getUpcomingEvents(1, 50);
     if (eventsRes && eventsRes.upcoming_events && eventsRes.upcoming_events.length > 0) {
       const now = Date.now();
@@ -59,18 +63,18 @@ async function checkCalendarEvents() {
         // The format is "May 3, 2026, 12:00 PM" which natively parses in JS
         const eventStart = new Date(event.start).getTime();
 
-        // We want to alert exactly 10 minutes before the meeting
-        const alertTime = eventStart - (10 * 60 * 1000);
+        // We want to alert exactly alertTimingMins minutes before the meeting
+        const alertTime = eventStart - (alertTimingMins * 60 * 1000);
         const msUntilAlert = alertTime - now;
 
         // Case 1: Alert is in the future
         if (msUntilAlert > 0) {
           notifiedEvents.add(event.id);
-          console.log(`⏰ Life Engine: Scheduled exact alert for ${event.summary} in ${Math.round(msUntilAlert / 60000)} mins`);
+          console.log(`⏰ Life Engine: Scheduled exact alert for ${event.summary} in ${Math.round(msUntilAlert / 60000)} mins (Preference: ${alertTimingMins}m)`);
 
-          setTimeout(() => triggerAlert(event, 10), msUntilAlert);
+          setTimeout(() => triggerAlert(event, alertTimingMins), msUntilAlert);
         }
-        // Case 2: Server just booted, and we are within the 10 min window but before the meeting
+        // Case 2: Server just booted, and we are within the alert timing window but before the meeting
         else if (msUntilAlert <= 0 && eventStart > now) {
           notifiedEvents.add(event.id);
           const minsLeft = Math.round((eventStart - now) / 60000);
@@ -89,7 +93,7 @@ async function checkDailyNudges() {
     const uid = process.env.DEFAULT_USER_ID;
     const profile = await getUserProfile(uid);
     if (profile) {
-      const maxNudges = profile.preferences?.notifications?.maxNudgesPerDay || 3;
+      const maxNudges = profile.preferences?.notifications?.maxNudgesPerDay || profile.preferences?.maxNudgesPerDay || 3;
       const sentToday = await getNudgesCountToday(uid);
 
       if (sentToday < maxNudges) {

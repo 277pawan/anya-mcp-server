@@ -550,8 +550,8 @@ async function callMCPTool(toolName, params) {
           lifeContext: fbio.lifeContext,
           pipelineSettings: cleanedParams.pipelineSettings,
         } : {
-          name: "Pawan Bisht", role: "Developer",
-          pitch: "I am a skilled developer looking to solve your technical challenges.",
+          name: "Pawan Bisht", role: "Full Stack Engineer",
+          pitch: "I am a skilled Full Stack Engineer looking to solve your technical challenges.",
           pipelineSettings: cleanedParams.pipelineSettings,
         };
         result = await findLeadsForProposal(cleanedParams.query, {
@@ -602,8 +602,8 @@ async function callMCPTool(toolName, params) {
           resumeFileName: gbio.resumeFileName,
           pipelineSettings: cleanedParams.pipelineSettings,
         } : {
-          name: "Pawan Bisht", role: "Developer",
-          pitch: "I am a skilled developer looking for impactful full-time opportunities.",
+          name: "Pawan Bisht", role: "Full Stack Engineer",
+          pitch: "I am a skilled Full Stack Engineer looking for impactful full-time opportunities.",
           pipelineSettings: cleanedParams.pipelineSettings,
         };
         result = await findLeadsForProposal(cleanedParams.query, {

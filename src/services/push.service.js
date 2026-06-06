@@ -63,6 +63,13 @@ export async function sendPushNotification(token, title, body, data = {}) {
       title,
       body,
     },
+    android: {
+      notification: {
+        channelId: 'default_notification_channel',
+        sound: 'default',
+        priority: 'high',
+      }
+    },
     data: {
       click_action: 'FLUTTER_NOTIFICATION_CLICK', // standard intent payload
       ...data

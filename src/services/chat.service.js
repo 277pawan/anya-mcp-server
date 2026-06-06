@@ -20,7 +20,8 @@ Crucial Identity Rules:
 4. NEVER mention technical details like "tools", "JSON", "APIs", "external systems", or "the backend".
 5. If you are provided with SYSTEM DATA, you MUST use the exact details provided. Do NOT invent, guess, or hallucinate names, meeting titles, times, or project details. Only state what is explicitly in the data.
 6. If the data is empty or says "No results", explicitly state that there is nothing there. DO NOT invent fake data to be helpful!
-7. Keep your tone conversational, elegant, human, and helpful.`;
+7. Keep your tone conversational, elegant, human, and helpful.
+8. When asked about your features, capabilities, or what you can do, do NOT default to listing the user's fitness or daily stats. Instead, explain your core features naturally (e.g. searching the web, scheduling and managing calendar events, searching books, digital library, location intelligence, and email/job application pipelines). Only refer to their daily fitness stats when they specifically ask about their health, daily progress, or habits.`;
 
 async function getAnyaSystemPrompt(userId, systemPromptExt = "") {
   let basePrompt = ANYA_PERSONA;
@@ -29,6 +30,24 @@ async function getAnyaSystemPrompt(userId, systemPromptExt = "") {
     const profile = await getUserProfile(userId);
     console.log(`[SystemPrompt] Profile loaded for userId=${userId}: name="${profile?.name}", skills=${profile?.skills?.length || 0}`);
     if (profile) {
+      // Fetch latest current experience role, fallback to preferences, then default to 'Full Stack Engineer'
+      let detectedRole = 'Full Stack Engineer';
+      try {
+        const expRes = await query(
+          `SELECT role FROM experience WHERE user_id = $1 ORDER BY is_current DESC, start_date DESC NULLS LAST, created_at DESC LIMIT 1`,
+          [userId]
+        );
+        if (expRes.rows.length && expRes.rows[0].role) {
+          detectedRole = expRes.rows[0].role;
+        } else if (profile.preferences?.role) {
+          detectedRole = profile.preferences.role;
+        } else if (profile.preferences?.primary_role) {
+          detectedRole = profile.preferences.primary_role;
+        }
+      } catch (err) {
+        console.warn('[SystemPrompt] Failed to fetch experience role:', err.message);
+      }
+
       const skillsList = Array.isArray(profile.skills) && profile.skills.length > 0
         ? profile.skills.map(s => `${s.name} (${s.category})`).join(', ')
         : "Not specified";
@@ -50,6 +69,7 @@ async function getAnyaSystemPrompt(userId, systemPromptExt = "") {
 You are Anya. You know EVERYTHING about the person you are talking to. This is your user — your person. You know them intimately. NEVER say "I don't know who you are", "I don't have that information", or "you haven't told me". You ALREADY know all of this:
 
 👤 FULL NAME: ${profile.name || "Pawan Bisht"}
+💼 PRIMARY ROLE: ${detectedRole}
 📧 EMAIL: ${profile.email || "Not specified"}
 📍 LOCATION: ${profile.location || "India"}
 📞 CONTACT: ${profile.contact || "Not specified"}
@@ -63,6 +83,8 @@ You are Anya. You know EVERYTHING about the person you are talking to. This is y
 🔥 ACTIVITY STREAK: ${profile.streak || 0} days (Personal best: ${profile.longest_streak || 0} days)
 🕐 TIMEZONE: ${profile.timezone || "Not specified"}
 📅 AVAILABILITY: ${profile.availability || "Not specified"}
+
+You know that Pawan is a skilled ${detectedRole}. In corporate, job hunting, and technical contexts, refer to Pawan as a ${detectedRole} and align your responses to this professional identity.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [IRON-CLAD IDENTITY RULES — NEVER BREAK THESE]
@@ -212,6 +234,15 @@ async function saveMessage(
   content,
   extras = {},
 ) {
+  const validProviders = ['gemini', 'groq', 'openai', 'cloudflare', 'github', 'deepseek', 'mistral'];
+  let dbProvider = extras.provider;
+  if (dbProvider) {
+    dbProvider = dbProvider.toLowerCase().trim();
+    if (!validProviders.includes(dbProvider)) {
+      dbProvider = null;
+    }
+  }
+
   const { rows } = await client.query(
     `INSERT INTO chat_messages (session_id, user_id, role, content, tool_name, model, provider, is_streamed, latency_ms)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
@@ -222,7 +253,7 @@ async function saveMessage(
       content,
       extras.tool_name || null,
       extras.model || null,
-      extras.provider || null,
+      dbProvider,
       extras.is_streamed || false,
       extras.latency_ms || null,
     ],

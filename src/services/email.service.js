@@ -168,6 +168,24 @@ export async function getUserBioContext(userId) {
     const resumeFileName = prefs.resume?.fileName || `${(u.name || 'Resume').replace(/\s+/g, '_')}.pdf`;
     const resumeText     = prefs.resume?.raw_text || '';
 
+    // Fetch latest current experience role, fallback to preferences, then default to 'Full Stack Engineer'
+    let detectedRole = 'Full Stack Engineer';
+    try {
+      const expRes = await query(
+        `SELECT role FROM experience WHERE user_id = $1 ORDER BY is_current DESC, start_date DESC NULLS LAST, created_at DESC LIMIT 1`,
+        [userId]
+      );
+      if (expRes.rows.length && expRes.rows[0].role) {
+        detectedRole = expRes.rows[0].role;
+      } else if (prefs.role) {
+        detectedRole = prefs.role;
+      } else if (prefs.primary_role) {
+        detectedRole = prefs.primary_role;
+      }
+    } catch (err) {
+      console.warn('[Email] Failed to fetch experience role, using fallback:', err.message);
+    }
+
     return {
       name:        u.name || 'Developer',
       email:       u.email || process.env.CALENDAR_ID,
@@ -184,7 +202,7 @@ export async function getUserBioContext(userId) {
       resumeFileName,
       resumeText,
       pitch:       `Experienced ${skillsFlat ? `in ${skillsFlat}` : 'developer'} — ${u.availability || 'available now'}.`,
-      role:        'Software Developer',
+      role:        detectedRole,
       // Pass full prefs so proposalGenerator can use life_context etc.
       lifeContext: prefs.life_context || null,
     };
