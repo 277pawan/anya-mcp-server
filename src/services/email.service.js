@@ -11,6 +11,7 @@
 
 import { google } from 'googleapis';
 import { query } from '../db/pool.js';
+import { logBackgroundProgress } from "./background-logger.service.js";
 
 // ─── Gmail OAuth2 Client ────────────────────────────────────────────────────
 
@@ -264,7 +265,7 @@ export async function getUserBioContext(userId) {
  * @param {number}  [opts.delayMs=2000] - Delay between emails (avoid spam filters)
  * @returns {Promise<Array<{to, subject, success, error?}>>}
  */
-export async function sendProposalBatch(leads, bioContext, { dryRun = false, delayMs = 2000, userId } = {}) {
+export async function sendProposalBatch(leads, bioContext, { dryRun = false, delayMs = 2000, userId, sessionId = null } = {}) {
   const results = [];
 
   const sentToday = userId ? await getEmailsSentTodayCount(userId) : 0;
@@ -272,18 +273,21 @@ export async function sendProposalBatch(leads, bioContext, { dryRun = false, del
   if (remainingLimit < 0) remainingLimit = 0;
 
   console.log(`📊 [Email Batch] Daily status: sent today ${sentToday}/50. Remaining limit: ${remainingLimit}`);
+  await logBackgroundProgress(userId, sessionId, "email_apply", `Initiating batch application workflow (Today sent: ${sentToday}/50)...`);
 
   for (const lead of leads) {
     const email = lead.email;
     if (!email) {
       console.log(`   ⏭️ [Email] No email for lead: ${lead.name || lead.company} — skipping`);
       results.push({ to: null, lead: lead.name || lead.company, skipped: true, reason: 'no_email' });
+      await logBackgroundProgress(userId, sessionId, "email_apply", `Skipped lead '${lead.name || lead.company}': contact email not found.`);
       continue;
     }
 
     if (remainingLimit <= 0) {
       console.log(`   ⏭️ [Email Limit Reached] Cannot send email to ${email} (Daily 50 email limit reached) — skipping`);
       results.push({ to: email, lead: lead.name || lead.company, skipped: true, reason: 'daily_limit_reached' });
+      await logBackgroundProgress(userId, sessionId, "email_apply", `Skipped lead '${lead.name || lead.company}': daily 50 email application limit reached.`);
       continue;
     }
 
@@ -313,6 +317,9 @@ export async function sendProposalBatch(leads, bioContext, { dryRun = false, del
 
     if (sendResult.success) {
       remainingLimit--;
+      await logBackgroundProgress(userId, sessionId, "email_apply", `Successfully sent job application email to ${lead.company || lead.name} (${email}).`);
+    } else {
+      await logBackgroundProgress(userId, sessionId, "email_apply", `Failed sending email to ${lead.company || lead.name} (${email}): ${sendResult.error || 'Unknown error'}`);
     }
 
     results.push({ ...sendResult, lead: lead.name || lead.company });
@@ -322,6 +329,9 @@ export async function sendProposalBatch(leads, bioContext, { dryRun = false, del
       await new Promise(r => setTimeout(r, delayMs));
     }
   }
+
+  const sentCount = results.filter(r => r.success && !r.dryRun).length;
+  await logBackgroundProgress(userId, sessionId, "email_apply", `Batch application workflow complete. Sent ${sentCount} application email(s).`);
 
   return results;
 }

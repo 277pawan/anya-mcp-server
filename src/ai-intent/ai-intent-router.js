@@ -73,6 +73,8 @@ function buildLeadPipelineToolParams(classification, userContext, query) {
     pipelineSettings: pipeline,
     generateTemplates: entities.generateTemplates,
     objective: entities.objective,
+    userId: userContext.userId || process.env.DEFAULT_USER_ID,
+    sessionId: userContext.sessionId || null,
   };
 }
 
@@ -562,6 +564,8 @@ async function callMCPTool(toolName, params) {
           generateTemplates: cleanedParams.generateTemplates !== false,
           objective: cleanedParams.objective || "freelance_pitch",
           userContext: freelanceUserCtx,
+          sessionId: cleanedParams.sessionId,
+          userId: cleanedParams.userId || userContext.userId || process.env.DEFAULT_USER_ID,
         });
         // Auto-send proposal emails if leads have emails and bio has resume
         if (result.success && result.leads?.length && fbio) {
@@ -573,7 +577,8 @@ async function callMCPTool(toolName, params) {
             console.log(`📧 Auto-sending ${proposalReady.length} proposal email(s) with resume (score >= 80)...`);
             const emailResults = await sendProposalBatch(proposalReady, fbio, {
               delayMs: 1500,
-              userId: cleanedParams.userId || process.env.DEFAULT_USER_ID
+              userId: cleanedParams.userId || process.env.DEFAULT_USER_ID,
+              sessionId: cleanedParams.sessionId,
             });
             result.emailsSent = emailResults.filter(r => r.success).length;
             result.emailResults = emailResults;
@@ -620,6 +625,8 @@ async function callMCPTool(toolName, params) {
           generateTemplates: true, // Always generate templates so we can auto-apply if emails exist
           objective: "job_hunting",
           userContext: generalUserCtx,
+          sessionId: cleanedParams.sessionId,
+          userId: cleanedParams.userId || userContext.userId || process.env.DEFAULT_USER_ID,
         });
 
         // Auto-send proposal emails for general jobs if leads have emails and bio has resume
@@ -632,7 +639,8 @@ async function callMCPTool(toolName, params) {
             console.log(`📧 Auto-sending ${proposalReady.length} job application email(s) with resume (score >= 80)...`);
             const emailResults = await sendProposalBatch(proposalReady, gbio, {
               delayMs: 1500,
-              userId: cleanedParams.userId || process.env.DEFAULT_USER_ID
+              userId: cleanedParams.userId || process.env.DEFAULT_USER_ID,
+              sessionId: cleanedParams.sessionId,
             });
             result.emailsSent = emailResults.filter(r => r.success).length;
             result.emailResults = emailResults;

@@ -4,6 +4,7 @@ import { qualifyLeads } from "./providers/leadQualifier.js";
 import { enrichBatchLeads } from "./providers/prospeo.js";
 import { findEmailWithHunter } from "./providers/hunter.js";
 import { generateProposal } from "./providers/proposalGenerator.js";
+import { logBackgroundProgress } from "../services/background-logger.service.js";
 import {
   DEFAULT_LEAD_FETCH_LIMIT,
   DEFAULT_MAX_LEADS,
@@ -34,6 +35,8 @@ function mergePrioritizeLinkedIn(linkedinResults, generalResults) {
 
 export async function findLeadsForProposal(targetQuery, options = {}) {
   const {
+    sessionId = null,
+    userId = null,
     searchType = "semantic",
     maxLeads = DEFAULT_MAX_LEADS,
     minScore = 70,
@@ -61,22 +64,25 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
     (process.env.LEAD_LINKEDIN_BOOST !== "0" &&
       (objective === "job_hunting" || objective === "freelance_pitch"));
 
+  await logBackgroundProgress(userId, sessionId, "job_search", `Initiating job search: "${targetQuery}"...`);
+
   console.log(
     `🔍 Searching for: ${targetQuery} (URLs to fetch & scrape: ${effectiveFetchLimit})`,
   );
 
+  await logBackgroundProgress(userId, sessionId, "job_search", "Crawling web search results...");
   const searchResults = await searchWeb(targetQuery, searchType, {
     limit: effectiveFetchLimit,
   });
 
   if (!searchResults.success || !searchResults.results?.length) {
+    await logBackgroundProgress(userId, sessionId, "job_search", "Crawling web search results complete: No listings found.");
     return { success: false, error: "No search results found" };
   }
 
   let resultsToScrape = searchResults.results;
 
   if (linkedInBoost) {
-    // Search both jobs and user posts (e.g., "I am hiring a web developer")
     const currentYear = new Date().getFullYear();
     const currentMonth = new Date().toLocaleString('default', { month: 'long' });
     const liQuery = `(site:linkedin.com/jobs OR site:linkedin.com/posts) ${targetQuery} "hiring" OR "looking for" "${currentMonth} ${currentYear}"`;
@@ -96,6 +102,7 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
 
   const totalFromSearch = resultsToScrape.length;
   console.log(`📄 Found ${totalFromSearch} potential sources to consider`);
+  await logBackgroundProgress(userId, sessionId, "job_search", `Crawled search listings: Found ${totalFromSearch} potential job post URLs.`);
 
   if (totalFromSearch > effectiveFetchLimit) {
     console.log(
@@ -115,6 +122,7 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
   };
 
   const scrapeCap = Math.min(resultsToScrape.length, effectiveFetchLimit);
+  await logBackgroundProgress(userId, sessionId, "job_search", `Scraping and analyzing content from ${scrapeCap} source(s)...`);
   for (let i = 0; i < scrapeCap; i++) {
     const result = resultsToScrape[i];
     try {
@@ -151,6 +159,7 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
   }
 
   console.log(`🤖 AI qualifying ${scrapedData.length} sources...`);
+  await logBackgroundProgress(userId, sessionId, "job_search", `Running AI lead qualification on ${scrapedData.length} scraped source(s)...`);
   const qualified = await qualifyLeads(
     scrapedData,
     targetQuery,
@@ -162,6 +171,7 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
     console.log(
       `⚠️ AI found no qualified leads out of ${scrapedData.length} scraped sources.`,
     );
+    await logBackgroundProgress(userId, sessionId, "job_search", "AI Lead qualification complete. No matches found.");
     return {
       success: false,
       error:
@@ -170,6 +180,7 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
   }
 
   console.log(`✅ Found ${qualified.qualifiedLeads.length} qualified leads`);
+  await logBackgroundProgress(userId, sessionId, "job_search", `AI Lead qualification complete. Found ${qualified.qualifiedLeads.length} matching job(s).`);
 
   let leads = qualified.qualifiedLeads;
 
@@ -179,6 +190,7 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
     console.log(
       `📧 Finding contact information for ${leads.length} lead(s) (Hunter: ${hasHunter ? "on" : "off"}, Exa: ${hasExa ? "on" : "off"})...`,
     );
+    await logBackgroundProgress(userId, sessionId, "job_search", `Finding contact info & application emails for ${leads.length} lead(s)...`);
 
     let li = 0;
     for (const lead of leads) {
@@ -239,6 +251,7 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
 
   if (generateTemplates) {
     console.log(`✍️ Generating personalized email templates...`);
+    await logBackgroundProgress(userId, sessionId, "job_search", `Drafting professional application emails & tailoring to profile...`);
     for (const lead of leads) {
       const proposalData = await generateProposal(lead, userContext, objective);
       if (proposalData.success) {
@@ -263,6 +276,8 @@ export async function findLeadsForProposal(targetQuery, options = {}) {
     proposalReady: !!(lead.foundEmails?.[0] || lead.possibleEmails?.[0]),
     proposal: lead.proposal || null,
   }));
+
+  await logBackgroundProgress(userId, sessionId, "job_search", `Finished search and evaluation. Found ${finalLeads.length} relevant positions.`);
 
   return {
     success: true,

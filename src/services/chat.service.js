@@ -248,6 +248,7 @@ export async function sendMessage(userId, sessionId, content) {
     }));
     const intentResult = await routeUserMessage(content, {
       userId,
+      sessionId,
       history: mappedHistory,
     });
 
@@ -373,6 +374,7 @@ export async function streamMessage(ws, userId, sessionId, content) {
     }));
     const intentResult = await routeUserMessage(content, {
       userId,
+      sessionId,
       history: mappedHistory,
     });
 
