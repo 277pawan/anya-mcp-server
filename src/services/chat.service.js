@@ -234,6 +234,8 @@ async function saveMessage(
 
 export async function sendMessage(userId, sessionId, content) {
   return withTransaction(async (client) => {
+    const sessionRes = await client.query(`SELECT id FROM chat_sessions WHERE id = $1 AND user_id = $2`, [sessionId, userId]);
+    if (sessionRes.rowCount === 0) throw new Error(`Session ID ${sessionId} not found`);
     await saveMessage(client, sessionId, userId, "user", content);
     const historyRes = await client.query(
       `SELECT role, content FROM chat_messages WHERE session_id = $1 ORDER BY created_at DESC LIMIT 20`,
@@ -363,6 +365,8 @@ export async function streamMessage(ws, userId, sessionId, content) {
   };
 
   await withTransaction(async (client) => {
+    const sessionRes = await client.query(`SELECT id FROM chat_sessions WHERE id = $1 AND user_id = $2`, [sessionId, userId]);
+    if (sessionRes.rowCount === 0) throw new Error(`Session ID ${sessionId} not found`);
     await saveMessage(client, sessionId, userId, "user", content);
 
     const historyRes = await client.query(

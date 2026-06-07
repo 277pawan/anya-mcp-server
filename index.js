@@ -106,6 +106,7 @@ app.get("/debug/cron-status", (_req, res) => {
       scheduleInfo: {
         lifeEngine: "every 30 minutes  →  */30 * * * *",
         chatCleanup: "daily at 02:00 AM →  0 2 * * *",
+        weeklyReport: "Mondays at 06:00 AM → 0 6 * * 1",
       },
     });
   } catch (e) {
@@ -133,6 +134,16 @@ app.post("/debug/fire-notification", async (req, res) => {
       body,
     });
     res.json({ ok: true, result });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/** POST /debug/fire-weekly-report — manually trigger weekly report */
+app.post("/debug/fire-weekly-report", async (_req, res) => {
+  try {
+    await generateWeeklyReport();
+    res.json({ ok: true, message: "Weekly report generation triggered." });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -343,6 +354,12 @@ async function boot() {
     console.log("Starting Life Engine...");
     startLifeEngine();
     console.log("Life Engine started\n");
+    
+    // Schedule Weekly Report for Monday 6 AM
+    cron.schedule("0 6 * * 1", () => {
+      console.log("⏰ Running scheduled weekly report...");
+      generateWeeklyReport();
+    });
 
     server.listen(PORT, () => {
       console.log(`Anya API Server   → http://localhost:${PORT}`);

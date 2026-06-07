@@ -154,6 +154,13 @@ export async function runGlobalChatCleanup() {
         [userId]
       );
       console.log(`[Chat Cleanup] Deleted ${deletedSessions.rowCount} chat sessions older than 30 days for user ${userName}`);
+
+      // 4. Delete nudges older than 30 days
+      const deletedNudges = await query(
+        `DELETE FROM nudges WHERE user_id = $1 AND delivered_at < NOW() - INTERVAL '30 days'`,
+        [userId]
+      );
+      console.log(`[Chat Cleanup] Deleted ${deletedNudges.rowCount} nudges older than 30 days for user ${userName}`);
     }
     console.log('🧹 [Chat Cleanup] Global chat cleanup and insight extraction complete.');
   } catch (err) {
