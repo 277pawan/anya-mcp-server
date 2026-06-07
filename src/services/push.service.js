@@ -59,11 +59,9 @@ export async function sendPushNotification(token, title, body, data = {}) {
   }
 
   const payload = {
-    notification: {
-      title,
-      body,
-    },
     data: {
+      title: title || '',
+      body: body || '',
       click_action: 'FLUTTER_NOTIFICATION_CLICK', // standard intent payload
       ...data
     },

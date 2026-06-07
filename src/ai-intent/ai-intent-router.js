@@ -6,6 +6,7 @@ import {
   getCalendar,
   getUpcomingEvents,
   searchEvents,
+  createMeeting,
   searchNearbyPlaces,
   geocode,
   searchBooks,
@@ -218,6 +219,7 @@ async function classifyIntent(message, history = []) {
 
   const currentDate = new Date();
   const currentDateStr = currentDate.toISOString().split('T')[0];
+  const currentTimeStr = currentDate.toLocaleTimeString('en-US', { hour12: false });
   const currentMonth = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
 
   const prompt = `
@@ -225,6 +227,7 @@ async function classifyIntent(message, history = []) {
     If the user's message is a follow-up, use the history to resolve missing entities (like location, query, etc).
     
     CURRENT DATE: ${currentDateStr} (${currentMonth})
+    CURRENT TIME: ${currentTimeStr}
     
     HISTORY:
     ${historyText}
@@ -243,6 +246,10 @@ async function classifyIntent(message, history = []) {
         "fromDate": "EXACT YYYY-MM-DD or null. If user asks for a range like 'this month', calculate the first day.",
         "toDate": "EXACT YYYY-MM-DD or null. If user asks for a range like 'this month', calculate the last day.",
         "daysAhead": "Number (e.g., 7 for week, 30 for month) if asking for upcoming events, or null",
+        "startDateTime": "EXACT ISO datetime string (e.g., 2025-06-01T11:00:00) if the user asks to schedule/create a meeting. If user says '11 am', combine with CURRENT DATE.",
+        "endDateTime": "EXACT ISO datetime string for meeting end time, else null",
+        "meetingSummary": "string for the new meeting title if creating a meeting (default to 'Meeting' if not specified), else null",
+        "attendees": "Array of email addresses if user mentions who to invite, else null",
         "query": "string or null",
         "placeType": "string (e.g., 'hospital', 'restaurant') or null",
         "author": "string or null",
@@ -274,7 +281,7 @@ async function classifyIntent(message, history = []) {
     - maps (geocode): 'location' is required.
     - books: 'query' or 'author' is required.
     - job_search: can default to 'general' query, no strictly required fields.
-    - calendar: date defaults to 'today'.
+    - calendar: date defaults to 'today'. If creating a meeting, 'meetingSummary' and 'startDateTime' are required.
     - device_control: no strictly required fields (if user says "play music", musicQuery defaults to a default query or random music).
   `;
 
@@ -491,6 +498,18 @@ async function callMCPTool(toolName, params) {
 
       case "searchEvents":
         result = await searchEvents(cleanedParams.query, cleanedParams.from_date, cleanedParams.to_date, cleanedParams.maxResults);
+        break;
+
+      case "createMeeting":
+        result = await createMeeting(
+          cleanedParams.summary,
+          cleanedParams.start_datetime,
+          cleanedParams.end_datetime,
+          cleanedParams.description,
+          cleanedParams.location,
+          cleanedParams.attendees,
+          cleanedParams.add_google_meet
+        );
         break;
 
       case "searchNearbyPlaces":
@@ -754,6 +773,46 @@ export async function routeUserMessage(userMessage, userContext = {}) {
         }
         const lines = events.map(formatMeeting);
         return `Here are your upcoming events:\n${lines.join('\n')}`;
+      }
+
+      if (classification.entities.meetingSummary && classification.entities.startDateTime) {
+        // Fix LLM timezone and parsing issues
+        let startIso = classification.entities.startDateTime;
+        if (!startIso.includes('T')) {
+          // LLM returned just a date, assume 9 AM
+          startIso += 'T09:00:00';
+        }
+        
+        let start = new Date(startIso);
+        
+        // If LLM returned midnight (e.g., T00:00:00) but user probably wanted daytime, it might have failed time extraction.
+        // But we must trust the start object mostly.
+        // A safer way is to just use the start object.
+        
+        let endTimeStr = classification.entities.endDateTime;
+        let endTime;
+        if (!endTimeStr) {
+          endTime = new Date(start.getTime() + 60 * 60 * 1000).toISOString();
+        } else {
+          endTime = new Date(endTimeStr).toISOString();
+        }
+        
+        const finalStartIso = start.toISOString();
+        
+        console.log(`📅 Creating meeting: ${classification.entities.meetingSummary} at ${finalStartIso} with ${classification.entities.attendees?.join(', ') || 'no attendees'}`);
+        const raw = await callMCPTool("createMeeting", {
+          summary: classification.entities.meetingSummary,
+          start_datetime: finalStartIso,
+          end_datetime: endTime,
+          attendees: classification.entities.attendees,
+        });
+        const summary = raw.result?.success 
+          ? `Successfully created the meeting '${classification.entities.meetingSummary}'. It's scheduled for ${new Date(classification.entities.startDateTime).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })}.`
+          : `I couldn't create the meeting. Error: ${raw.result?.error || "Unknown error"}`;
+        return {
+          ...raw,
+          result: { summary }
+        };
       }
 
       if (classification.entities.fromDate && classification.entities.toDate) {
