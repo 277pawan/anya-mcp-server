@@ -249,10 +249,11 @@ async function classifyIntent(message, history = []) {
         "fromDate": "EXACT YYYY-MM-DD or null. If user asks for a range like 'this month', calculate the first day.",
         "toDate": "EXACT YYYY-MM-DD or null. If user asks for a range like 'this month', calculate the last day.",
         "daysAhead": "Number (e.g., 7 for week, 30 for month) if asking for upcoming events, or null",
-        "startDateTime": "EXACT ISO datetime string (e.g., 2025-06-01T11:00:00) if the user asks to schedule/create a meeting. If user says '11 am', combine with CURRENT DATE.",
-        "endDateTime": "EXACT ISO datetime string for meeting end time, else null",
+        "startDateTime": "EXACT ISO datetime string in LOCAL time WITHOUT timezone offset (e.g., 2025-06-01T11:00:00) if the user asks to schedule/create a meeting. If user says '11 am', combine with CURRENT DATE. IMPORTANT: Do NOT add Z or UTC offset — just plain local time.",
+        "endDateTime": "EXACT ISO datetime string in LOCAL time WITHOUT timezone offset for meeting end time, else null",
         "meetingSummary": "string for the new meeting title if creating a meeting (default to 'Meeting' if not specified), else null",
         "attendees": "Array of email addresses if user mentions who to invite, else null",
+        "addGoogleMeet": "boolean - true if user mentions Google Meet, meet link, video call, or conference link. Default false.",
         "query": "string or null",
         "placeType": "string (e.g., 'hospital', 'restaurant') or null",
         "author": "string or null",
@@ -817,38 +818,43 @@ export async function routeUserMessage(userMessage, userContext = {}) {
       }
 
       if (classification.entities.meetingSummary && classification.entities.startDateTime) {
-        // Fix LLM timezone and parsing issues
-        let startIso = classification.entities.startDateTime;
-        if (!startIso.includes('T')) {
-          // LLM returned just a date, assume 9 AM
-          startIso += 'T09:00:00';
+        // ─── Timezone-safe datetime parsing ───────────────────────────────────────
+        // The LLM returns naive local-time strings (e.g. "2026-06-07T20:00:00") with
+        // NO timezone offset. If we pass that directly to new Date() on a UTC server,
+        // Node.js treats it as UTC and we get +5:30 hours of drift (8pm IST → 1:30am IST).
+        // Fix: append the IST offset so the Date object is anchored correctly.
+        const IST_OFFSET = '+05:30';
+
+        function toISTAwareISO(naive) {
+          if (!naive) return null;
+          let s = naive.trim();
+          // Add time part if only date provided
+          if (!s.includes('T')) s += 'T09:00:00';
+          // If already has offset/Z, leave it alone
+          if (/[Z+\-]\d{2}:?\d{2}$/.test(s) || s.endsWith('Z')) return new Date(s).toISOString();
+          // Treat as IST local time
+          return new Date(s + IST_OFFSET).toISOString();
         }
-        
-        let start = new Date(startIso);
-        
-        // If LLM returned midnight (e.g., T00:00:00) but user probably wanted daytime, it might have failed time extraction.
-        // But we must trust the start object mostly.
-        // A safer way is to just use the start object.
-        
-        let endTimeStr = classification.entities.endDateTime;
-        let endTime;
-        if (!endTimeStr) {
-          endTime = new Date(start.getTime() + 60 * 60 * 1000).toISOString();
-        } else {
-          endTime = new Date(endTimeStr).toISOString();
-        }
-        
-        const finalStartIso = start.toISOString();
-        
-        console.log(`📅 Creating meeting: ${classification.entities.meetingSummary} at ${finalStartIso} with ${classification.entities.attendees?.join(', ') || 'no attendees'}`);
+
+        const finalStartIso = toISTAwareISO(classification.entities.startDateTime);
+        const finalEndIso = classification.entities.endDateTime
+          ? toISTAwareISO(classification.entities.endDateTime)
+          : new Date(new Date(finalStartIso).getTime() + 60 * 60 * 1000).toISOString();
+
+        // Determine if user wants Google Meet (explicit entity OR keyword in message)
+        const wantsGoogleMeet = classification.entities.addGoogleMeet === true
+          || /google\s*meet|meet\s*link|video\s*call|conference\s*link/i.test(userMessage);
+
+        console.log(`📅 Creating meeting: ${classification.entities.meetingSummary} at ${finalStartIso} IST with ${classification.entities.attendees?.join(', ') || 'no attendees'} | Meet: ${wantsGoogleMeet}`);
         const raw = await callMCPTool("createMeeting", {
           summary: classification.entities.meetingSummary,
           start_datetime: finalStartIso,
-          end_datetime: endTime,
+          end_datetime: finalEndIso,
           attendees: classification.entities.attendees,
+          add_google_meet: wantsGoogleMeet,
         });
         const summary = raw.result?.success 
-          ? `Successfully created the meeting '${classification.entities.meetingSummary}'. It's scheduled for ${new Date(classification.entities.startDateTime).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })}.`
+          ? `Successfully created the meeting '${classification.entities.meetingSummary}'. It's scheduled for ${new Date(finalStartIso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })}.`
           : `I couldn't create the meeting. Error: ${raw.result?.error || "Unknown error"}`;
         return {
           ...raw,
